@@ -38,7 +38,7 @@
     .stack{display:flex;gap:8px}
     .subCard{border:1px dashed var(--border);border-radius:12px;padding:12px;background:#0f1116}
     .sectionTitle{font-weight:600;margin:8px 0 4px 0}
-    .sticky{position:fixed;bottom:0;left:0;right:0;background:rgba(11,12,15,.9);border-top:1px solid var(--border);padding:10px;display:flex;gap:8;justify-content:space-between;z-index:20}
+    .sticky{position:fixed;bottom:0;left:0;right:0;background:rgba(11,12,15,.9);border-top:1px solid var(--border);padding:10px;display:flex;gap:8px;justify-content:space-between;z-index:20}
     @media(max-width:860px){
       .grid-2,.grid-2eq{grid-template-columns:1fr}
       .stack{flex-direction:column;align-items:stretch}
@@ -53,7 +53,6 @@
         <div class="logo">AW</div>
         <h1 class="title">글쓰기 자동화 프로그램 · 3단계 마법사</h1>
       </div>
-      <!-- 상단 ‘이해수준’ 드롭다운은 요구에 따라 제거됨 -->
     </div>
   </header>
 
@@ -63,11 +62,16 @@
     const { useState, useMemo, useEffect } = React;
 
     function App(){
-      // --------- Global states ---------
-      // Step 1 – API 옵션
+      // -------- Step/Global --------
+      const [activeStep, setActiveStep] = useState(1);
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState("");
+
+      // -------- STEP 1: API 연동(선택) --------
       const [useAI, setUseAI] = useState(false);
       const [apiKey, setApiKey] = useState("");
-      // Step 2 – 입력
+
+      // -------- STEP 2: 키워드/참고 입력 --------
       const [keyword, setKeyword] = useState("");
       const [titleCount, setTitleCount] = useState(5);
       const [referenceText, setReferenceText] = useState("");
@@ -75,7 +79,8 @@
       const [refTitles, setRefTitles] = useState([]);
       const [titleIdeas, setTitleIdeas] = useState([]);
       const [selectedTitle, setSelectedTitle] = useState("");
-      // Step 3 – 선택 입력
+
+      // -------- STEP 3: 본문 작성 옵션 --------
       const [authorType, setAuthorType] = useState("전문가 리뷰어");
       const [authorCustom, setAuthorCustom] = useState("");
       const [toneStyle, setToneStyle] = useState("전문적이고 신뢰감 있는");
@@ -83,16 +88,13 @@
       const [draft, setDraft] = useState("");
       const [factUrl, setFactUrl] = useState("");
       const [minChars, setMinChars] = useState(1000);
-
       const [markdown, setMarkdown] = useState("");
-      const [activeStep, setActiveStep] = useState(1);
-      const [loading, setLoading] = useState(false);
-      const [error, setError] = useState("");
 
+      // 저장/복원(API 키만)
       useEffect(()=>{ const saved = localStorage.getItem("naverWizard_openai_key")||""; setApiKey(saved); },[]);
       useEffect(()=>{ localStorage.setItem("naverWizard_openai_key", apiKey||""); },[apiKey]);
 
-      // ---------------- MD -> HTML ----------------
+      // -------- Markdown -> HTML --------
       function mdToHtml(md){
         let h = md || "";
         h = h.replace(/^# (.+)$/gm, "<h1>$1</h1>");
@@ -109,7 +111,7 @@
       }
       const html = useMemo(()=>mdToHtml(markdown),[markdown]);
 
-      // ---------------- Helpers for title diversity ----------------
+      // -------- Helpers for title diversity --------
       function topTerms(text,k=6){
         const stop=new Set(["그리고","그러나","하지만","또는","또","이미","또한","그","이","저","것","수","때문","대한","에서","으로","하기","하는","있는","없는","합니다","했다","이다","같은","등","더","좀","매우","너무","되다","하다","있다","없다"]);
         const counts=Object.create(null);
@@ -121,7 +123,7 @@
       function jaccardSim(a,b){ const sa=new Set(a.split(/\s+/)); const sb=new Set(b.split(/\s+/)); const inter=[...sa].filter(x=>sb.has(x)).length; const uni=new Set([...sa,...sb]).size; return uni? inter/uni:0; }
       function uniqueBySimilarity(arr,th=0.42){ const out=[]; for(const t of arr){ if(out.every(o=>jaccardSim(o,t)<th)) out.push(t);} return out; }
 
-      // ---------------- Local Title Generator V2 (reference-aware) ----------------
+      // -------- Local Title Generator (reference-aware) --------
       function generateTitleIdeasLocalV2(baseKeyword, n, refText, refTitleList){
         if(!baseKeyword || !baseKeyword.trim()) return [];
         const base = baseKeyword.trim();
@@ -157,7 +159,7 @@
         return pool.slice(0, need);
       }
 
-      // ---------------- AI Title (optional) ----------------
+      // -------- AI Title (optional) --------
       async function generateTitleIdeasAI({ baseKeyword, n, ref }){
         if(!apiKey) throw new Error("OpenAI API 키를 먼저 입력하세요.");
         const payload = {
@@ -192,7 +194,7 @@ ${(ref||"").slice(0,2000)}
         return arr.filter(Boolean).slice(0, Math.max(1, Number(n)||5));
       }
 
-      // ---------------- Fetch titles from URL (CORS-friendly fallback) ----------------
+      // -------- Fetch titles from URL (CORS-friendly fallback) --------
       async function fetchTitlesFromURL(){
         setError(""); setRefTitles([]);
         if(!(referenceUrl||"").trim()) return;
@@ -213,8 +215,11 @@ ${(ref||"").slice(0,2000)}
         if(!text){ setError("페이지를 불러오지 못했습니다(CORS 가능). URL 확인 또는 텍스트를 직접 붙여넣어 주세요."); return; }
 
         const found = new Set();
-        const add = (s)=>{ const t=(s||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim(); if(t && t.length>6 && t.length<120) found.add(t); };
-        (text.match(/<meta[^>]+property=['"]og:title['"][^>]+content=['"]([^'"]+)['"][^>]*>/ig)||[]).forEach(m=>{ const g=/content=['"]([^'"]+)['"]/i.exec(m); if(g) add(g[1]); });
+        const strip = (s)=> (s||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+        const add = (s)=>{ const t=strip(s); if(t && t.length>6 && t.length<120) found.add(t); };
+
+        (text.match(/<meta[^>]+property=['"]og:title['"][^>]+content=['"]([^'"]+)['"][^>]*>/ig)||[])
+          .forEach(m=>{ const g=/content=['"]([^'"]+)['"]/i.exec(m); if(g) add(g[1]); });
         (text.match(/<(h1|h2|h3)[^>]*>([\s\S]*?)<\/\1>/ig)||[]).forEach(m=> add(m));
         (text.match(/<strong[^>]*>([\s\S]*?)<\/strong>/ig)||[]).forEach(m=> add(m));
         (text.match(/<a [^>]*>([\s\S]*?)<\/a>/ig)||[]).slice(0,400).forEach(m=> add(m));
@@ -223,7 +228,7 @@ ${(ref||"").slice(0,2000)}
         setRefTitles(list);
       }
 
-      // ---------------- Body generator (Step3; with optional custom author/tone) ----------------
+      // -------- Body generator (Step3) --------
       function generateBody({ title, toneStyle, authorType, draft, factUrl, minChars, authorCustom, toneCustom }){
         const effAuthor = (authorType==="기타(직접 입력)" ? (authorCustom||"작성자") : authorType);
         const effTone = (toneStyle==="기타(직접 입력)" ? (toneCustom||"중립적") : toneStyle);
@@ -305,8 +310,7 @@ ${draft ? `> 제공된 초안(요약): ${draft.slice(0,200)}${draft.length>200?"
         return md;
       }
 
-      // ---------------- Actions ----------------
-      const canGoStep2 = (keyword||"").trim().length > 0; // 다음(2단계) 버튼 활성용
+      // -------- Actions --------
       const canGoStep3 = (selectedTitle||"").trim().length > 0;
 
       async function onGenerateTitles(){
@@ -342,7 +346,7 @@ ${draft ? `> 제공된 초안(요약): ${draft.slice(0,200)}${draft.length>200?"
         setMarkdown(md);
       }
 
-      // ---------------- UI ----------------
+      // -------- UI --------
       return (
         <>
           {/* Tabs */}
@@ -354,11 +358,11 @@ ${draft ? `> 제공된 초안(요약): ${draft.slice(0,200)}${draft.length>200?"
             ))}
           </div>
 
-          {/* STEP 1 – API 연동 선택 */}
+          {/* STEP 1 – API 연동: 체크박스 + 키 */}
           {activeStep===1 && (
             <section className="card">
               <div className="stephead">
-                <h2 style={{margin:0,fontSize:16,fontWeight:600}}>1. API 연동 선택(선택)</h2>
+                <h2 style={{margin:0,fontSize:16,fontWeight:600}}>1. API 연동 (선택)</h2>
                 <span className="pill">STEP 1</span>
               </div>
 
@@ -373,12 +377,9 @@ ${draft ? `> 제공된 초안(요약): ${draft.slice(0,200)}${draft.length>200?"
                     <input className="input" type="password" value={apiKey} onChange={(e)=>setApiKey(e.target.value)} placeholder="sk-..." />
                   </div>
                 )}
-                <div className="subCard">
-                  <div className="sectionTitle">API 사용/미사용 차이</div>
-                  <div className="note">
-                    • <b style={{color:"#e2e8f0"}}>API 사용</b>: 참고 텍스트의 어휘/톤을 반영한 <b>AI 기반 제목</b> 생성(품질↑).<br/>
-                    • <b style={{color:"#e2e8f0"}}>미사용</b>: 인터넷/키 없이 동작하는 <b>로컬 규칙 기반</b> 제목 생성(속도/안정성↑).
-                  </div>
+                <div className="note">
+                  • <b style={{color:"#e2e8f0"}}>API 사용</b>: 참고 텍스트의 어휘/톤을 반영한 <b>AI 기반 제목</b>(품질↑)<br/>
+                  • <b style={{color:"#e2e8f0"}}>미사용</b>: 인터넷/키 없이 동작하는 <b>로컬 규칙 기반</b>(속도/안정성↑)
                 </div>
               </div>
 
@@ -388,7 +389,7 @@ ${draft ? `> 제공된 초안(요약): ${draft.slice(0,200)}${draft.length>200?"
             </section>
           )}
 
-          {/* STEP 2 – 키워드/개수 + 참고 텍스트 + URL 수집 */}
+          {/* STEP 2 – 키워드/개수 + 참고 텍스트 + URL */}
           {activeStep===2 && (
             <section className="card">
               <div className="stephead">
@@ -424,7 +425,7 @@ ${draft ? `> 제공된 초안(요약): ${draft.slice(0,200)}${draft.length>200?"
                 {refTitles.length>0 && (
                   <div className="note" style={{marginTop:8}}>
                     웹에서 탐지한 제목 {refTitles.length}개 중 일부:
-                    <ul style="margin-top:6px">
+                    <ul style={{ marginTop: 6 }}>
                       {refTitles.slice(0,6).map((t,i)=>(<li key={i}>• {t}</li>))}
                     </ul>
                   </div>
@@ -462,7 +463,7 @@ ${draft ? `> 제공된 초안(요약): ${draft.slice(0,200)}${draft.length>200?"
             </section>
           )}
 
-          {/* STEP 3 – 선택한 제목으로 본문 생성 (기타 입력 지원) */}
+          {/* STEP 3 – 선택한 제목으로 본문 생성 */}
           {activeStep===3 && (
             <section className="card">
               <div className="stephead">
@@ -575,9 +576,9 @@ ${draft ? `> 제공된 초안(요약): ${draft.slice(0,200)}${draft.length>200?"
           </div>
 
           <footer className="container" style={{margin:"32px auto"}}>
-            <hr style="border-color:var(--border);margin:12px 0" />
+            <hr style={{borderColor:"var(--border)",margin:"12px 0"}} />
             <p className="note">
-              공개 배포 시에는 API 키를 프런트에 넣지 말고 서버 프록시를 사용하세요. URL 참조는 CORS 정책에 따라 제한될 수 있습니다.
+              공개 배포 시 API 키를 프런트에 넣지 말고 서버 프록시를 사용하세요. URL 참조는 CORS 정책에 따라 제한될 수 있습니다.
             </p>
           </footer>
         </>
