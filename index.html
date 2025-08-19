@@ -6,9 +6,7 @@
   <title>글쓰기 자동화 · 3단계 마법사 (Demo)</title>
   <style>
     html,body,#root{height:100%;margin:0}
-    /* 시스템 폰트 스택 (가독성/한글) */
     body{font-family:"Noto Sans KR",system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Malgun Gothic,"맑은 고딕",Arial,sans-serif}
-    /* 스크롤바 살짝 어둡게 */
     ::-webkit-scrollbar{height:10px;width:10px}
     ::-webkit-scrollbar-thumb{background:#1f2430;border-radius:8px}
   </style>
@@ -20,7 +18,7 @@
 <body>
   <div id="root"></div>
 
-  <!-- 여기서부터 JSX 사용 -->
+  <!-- JSX 실행 -->
   <script type="text/babel">
     const {useMemo,useState,useEffect} = React;
 
@@ -33,7 +31,7 @@
       // ------- Global State -------
       const [keyword, setKeyword] = useState("");
       const [referenceText, setReferenceText] = useState("");
-      const [titleCount, setTitleCount] = useState(5);
+      const [titleCount, setTitleCount] = useState(5);       // ⬅️ 2단계로 이동
       const [titleIdeas, setTitleIdeas] = useState([]);
       const [selectedTitle, setSelectedTitle] = useState("");
       const [minChars, setMinChars] = useState(1200);
@@ -46,10 +44,14 @@
       const [loading, setLoading] = useState(false);
       const [error, setError] = useState("");
 
-      // 2단계: 감성↔이성 슬라이더(1=감성, 5=이성, 0.5 단위), 형식 펼침 패널
+      // 2단계: 감성↔이성 슬라이더 & 형식 옵션
       const [toneLevel, setToneLevel] = useState(3);
       const [titleFormat, setTitleFormat] = useState("auto"); // 'auto'|'question'|'command'|'list'|'compare'
       const [formatOpen, setFormatOpen] = useState(false);
+
+      // 2단계: 참고 URL
+      const [refUrl, setRefUrl] = useState("");
+      const [fetchingUrl, setFetchingUrl] = useState(false);
 
       // Review & spacing
       const [reviewing, setReviewing] = useState(false);
@@ -90,6 +92,31 @@
           .filter(w => w && w.length > 1 && !stop.has(w))
           .forEach(w => { counts[w] = (counts[w]||0)+1; });
         return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,k).map(([w])=>w);
+      }
+
+      // ====== 2단계: 참고 URL 불러오기 ======
+      async function onFetchUrl() {
+        const url = (refUrl || "").trim();
+        if (!url) return;
+        try {
+          setError(""); setFetchingUrl(true);
+          const resp = await fetch(url, { mode: "cors" });
+          if (!resp.ok) throw new Error(`요청 실패: ${resp.status}`);
+          const html = await resp.text();
+          // 매우 가벼운 본문 추출(간이): title + meta + body 텍스트
+          const doc = new DOMParser().parseFromString(html, "text/html");
+          const title = doc.querySelector("title")?.textContent || "";
+          const metas = [...doc.querySelectorAll("meta[name='description'],meta[property='og:description']")]
+            .map(m=>m.getAttribute("content")).filter(Boolean).join(" ");
+          const bodyText = (doc.body?.innerText || "").replace(/\s+/g," ").trim();
+          const merged = [title, metas, bodyText].join("\n").slice(0, 6000); // 길이 제한
+          if (!merged) throw new Error("본문을 읽을 수 없습니다.");
+          setReferenceText(prev => (prev ? (prev + "\n\n" + merged) : merged));
+        } catch (e) {
+          setError("URL에서 내용을 불러오지 못했습니다. (많은 사이트가 CORS를 차단합니다) — 텍스트를 직접 붙여넣어 주세요.");
+        } finally {
+          setFetchingUrl(false);
+        }
       }
 
       // ------- Title generators -------
@@ -411,8 +438,8 @@
                   </div>
                 </div>
                 <div>
-                  <label style={styles.label}>제목 생성 개수</label>
-                  <input type="number" min={1} max={20} value={titleCount} onChange={(e)=>{ const v = parseInt(e.target.value||"0",10); setTitleCount(Number.isFinite(v)?v:5); }} style={styles.number} />
+                  <label style={styles.label}>안내</label>
+                  <div style={{...styles.input, padding:"12px"}}>2단계에서 키워드·제목 수·형식·톤을 설정하고 제목을 생성합니다.</div>
                 </div>
               </div>
 
@@ -434,6 +461,24 @@
               <div style={{ marginTop: 12 }}>
                 <label style={styles.label}>키워드(쉼표 구분 허용)</label>
                 <input value={keyword} onChange={(e)=>setKeyword(e.target.value)} placeholder="예: 개인정보 보호법" style={styles.input} />
+              </div>
+
+              {/* 제목 생성 개수 (1단계 → 2단계로 이동됨) */}
+              <div style={{ marginTop: 12 }}>
+                <label style={styles.label}>제목 생성 개수</label>
+                <input type="number" min={1} max={20} value={titleCount} onChange={(e)=>{ const v = parseInt(e.target.value||"0",10); setTitleCount(Number.isFinite(v)?v:5); }} style={styles.number} />
+              </div>
+
+              {/* 참고 URL + 불러오기 */}
+              <div style={{ marginTop: 12 }}>
+                <label style={styles.label}>참고 URL (선택)</label>
+                <div className="stack">
+                  <input value={refUrl} onChange={(e)=>setRefUrl(e.target.value)} placeholder="https://example.com/article" style={{...styles.input, flex:1}} />
+                  <button onClick={onFetchUrl} disabled={fetchingUrl || !refUrl.trim()} style={{ ...styles.btnGhost, opacity:(fetchingUrl || !refUrl.trim())?0.5:1 }}>
+                    {fetchingUrl ? "불러오는 중..." : "불러오기"}
+                  </button>
+                </div>
+                <div style={styles.note}>&middot; OpenAI는 URL을 자동으로 읽지 않습니다. 불러오기에 성공하면 본문 텍스트를 아래 “참고 내용”에 합칩니다. (CORS로 실패할 수 있음)</div>
               </div>
 
               {/* 참고 텍스트 */}
@@ -589,7 +634,7 @@
 
           <footer style={{ maxWidth: 1120, margin: '32px auto', padding: '0 12px' }}>
             <hr style={{ borderColor: palette.border, margin: '12px 0' }} />
-            <p style={styles.note}>모바일 가독성(큰 터치 영역/스티키 버튼/2열→1열 전환), AI 선택적 사용, 감성↔이성 슬라이더, 형식 펼침, 검수 & 자동 여백 포함.</p>
+            <p style={styles.note}>모바일 가독성(큰 터치 영역/스티키 버튼/2열→1열 전환), AI 선택적 사용, 감성↔이성 슬라이더, 형식 펼침, 참고 URL 불러오기, 검수 & 자동 여백 포함.</p>
           </footer>
         </div>
       );
