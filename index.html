@@ -1,590 +1,216 @@
-<!doctype html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>글쓰기 자동화 프로그램 · 3단계 마법사</title>
+import React, { useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Slider } from "@/components/ui/slider";
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
 
-  <!-- React 18 UMD -->
-  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+export default function NaverWriter() {
+  const [step, setStep] = useState(1);
+  const [apiKey, setApiKey] = useState("");
+  const [keyword, setKeyword] = useState("");
+  const [reference, setReference] = useState("");
+  const [tone, setTone] = useState(3); // 1=감성, 5=이성
+  const [format, setFormat] = useState("question");
+  const [titles, setTitles] = useState([]);
+  const [selectedTitle, setSelectedTitle] = useState("");
+  const [body, setBody] = useState("");
 
-  <!-- ✅ Babel (standalone) 최신 & 프리셋 사용 -->
-  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+  // --- 제목 생성 (샘플 로직: 실제는 OpenAI API 연동 필요)
+  const generateTitles = () => {
+    const baseTitles = [
+      `(${keyword})란 무엇일까? 숨겨진 이야기`,
+      `${keyword}의 3가지 핵심 포인트`,
+      `${keyword}, 사람들이 놓치고 있는 작은 비밀`,
+      `${keyword} 완벽 정리: 지금 꼭 알아야 할 이유`,
+      `데이터로 보는 ${keyword}의 현재와 미래`
+    ];
+    setTitles(baseTitles);
+    setStep(3);
+  };
 
-  <style>
-    :root{
-      --bg:#0b0c0f; --card:#111318; --border:#1b1e25; --text:#e7eaf0; --muted:#9aa3b2;
-      --acc:#a3bffa; --acc2:#7aa2f7;
-    }
-    *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',Pretendard,Roboto,Arial}
-    .container{max-width:1120px;margin:0 auto;padding:12px 12px}
-    header{position:sticky;top:0;background:rgba(11,12,15,.65);backdrop-filter:blur(6px);border-bottom:1px solid var(--border);z-index:10}
-    .logo{width:36px;height:36px;border-radius:16px;display:grid;place-items:center;font-weight:700;background:linear-gradient(180deg,#20314f,#101828);color:#dbe7ff}
-    .title{font-size:18px;font-weight:600;margin:0}
-    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:12px 12px}
-    .tab{border:1px solid var(--border);border-radius:12px;padding:8px 14px;background:#0c0f14;color:var(--muted);cursor:pointer;flex:1;min-width:90px}
-    .tab.active{background:#111827;color:var(--text)}
-    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;margin:12px}
-    .stephead{display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:12px}
-    .pill{padding:2px 9px;border-radius:9999px;font-size:12px;background:#0f1116;color:var(--muted);border:1px solid var(--border)}
-    .label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
-    .input,.number,.select,.textarea{width:100%;background:#0e1117;color:var(--text);border:1px solid var(--border);border-radius:12px;padding:10px 12px}
-    .textarea{min-height:120px}
-    .btn{background-image:linear-gradient(180deg,var(--acc),var(--acc2));color:#0b1020;font-weight:600;border-radius:14px;padding:10px 16px;border:0;cursor:pointer}
-    .btnGhost{background:transparent;color:var(--text);border:1px solid var(--border);border-radius:12px;padding:9px 14px;cursor:pointer}
-    .note{font-size:12px;color:var(--muted)}
-    .h3{margin:8px 0;color:#e9edf7}
-    .prose{border:1px solid var(--border);background:var(--card);border-radius:16px;padding:16px;min-height:240px}
-    .grid-2{display:grid;grid-template-columns:2fr 1fr;gap:12px}
-    .grid-2eq{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    .stack{display:flex;gap:8px}
-    .subCard{border:1px dashed var(--border);border-radius:12px;padding:12px;background:#0f1116}
-    .sectionTitle{font-weight:600;margin:8px 0 4px 0}
-    .sticky{position:fixed;bottom:0;left:0;right:0;background:rgba(11,12,15,.9);border-top:1px solid var(--border);padding:10px;display:flex;gap:8px;justify-content:space-between;z-index:20}
-    .errorBanner{background:#3f1d1d;color:#ffd6d6;border:1px solid #7f1d1d;padding:10px 14px;margin:12px;border-radius:10px;display:none}
-    .errorBanner.show{display:block}
-    @media(max-width:860px){
-      .grid-2,.grid-2eq{grid-template-columns:1fr}
-      .stack{flex-direction:column;align-items:stretch}
-      .title{font-size:16px}
-    }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="container" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
-      <div style="display:flex;align-items:center;gap:12px">
-        <div class="logo">AW</div>
-        <h1 class="title">글쓰기 자동화 프로그램 · 3단계 마법사</h1>
-      </div>
-    </div>
-  </header>
+  // --- 본문 생성 (샘플 로직)
+  const generateBody = () => {
+    let rawText = `
+서론: ${keyword}에 대한 흥미로운 시작...
+본론: ${reference || "참고 내용 없음"}을 기반으로 ${keyword}의 심화 설명...
+결론: ${keyword}를 통해 얻을 수 있는 인사이트 요약...
+    `;
+    // 문법 검수 시뮬레이션 + 문단 끝에 여백
+    const refined = rawText
+      .split("\n")
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map(line => line + "\n\n")
+      .join("");
+    setBody(refined);
+  };
 
-  <!-- 화면에서 바로 보이는 에러 배너 -->
-  <div id="err" class="errorBanner"></div>
-
-  <div id="app"></div>
-
-  <!-- ✅ 프리셋 지정 필수 -->
-  <script type="text/babel" data-presets="env,react">
-    const { useState, useMemo, useEffect } = React;
-
-    function App(){
-      const [activeStep, setActiveStep] = useState(1);
-      const [loading, setLoading] = useState(false);
-      const [error, setError] = useState("");
-
-      // STEP 1
-      const [useAI, setUseAI] = useState(false);
-      const [apiKey, setApiKey] = useState("");
-      useEffect(()=>{ const saved = localStorage.getItem("naverWizard_openai_key")||""; setApiKey(saved); },[]);
-      useEffect(()=>{ localStorage.setItem("naverWizard_openai_key", apiKey||""); },[apiKey]);
-
-      // STEP 2
-      const [keyword, setKeyword] = useState("");
-      const [titleCount, setTitleCount] = useState(5);
-      const [referenceText, setReferenceText] = useState("");
-      const [referenceUrl, setReferenceUrl] = useState("");
-      const [refTitles, setRefTitles] = useState([]);
-      const [titleIdeas, setTitleIdeas] = useState([]);
-      const [selectedTitle, setSelectedTitle] = useState("");
-
-      // STEP 3
-      const [authorType, setAuthorType] = useState("전문가 리뷰어");
-      const [authorCustom, setAuthorCustom] = useState("");
-      const [toneStyle, setToneStyle] = useState("전문적이고 신뢰감 있는");
-      const [toneCustom, setToneCustom] = useState("");
-      const [draft, setDraft] = useState("");
-      const [factUrl, setFactUrl] = useState("");
-      const [minChars, setMinChars] = useState(1000);
-      const [markdown, setMarkdown] = useState("");
-
-      function mdToHtml(md){
-        let h = md || "";
-        h = h.replace(/^# (.+)$/gm, "<h1>$1</h1>")
-             .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-             .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-             .replace(/^> (.+)$/gm, "<blockquote>$1</blockquote>")
-             .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-             .replace(/\*(.+?)\*/g, "<em>$1</em>")
-             .replace(/`([^`]+)`/g, "<code>$1</code>")
-             .replace(/^\s*[-*]\s+(.+)$/gm, "<li>$1</li>")
-             .replace(/(<li>.*<\/li>\n?)+/g, m => "<ul>"+m+"</ul>")
-             .replace(/\n\n+/g, "<br/><br/>");
-        return h;
-      }
-      const html = useMemo(()=>mdToHtml(markdown),[markdown]);
-
-      function topTerms(text,k=6){
-        const stop=new Set(["그리고","그러나","하지만","또는","또","이미","또한","그","이","저","것","수","때문","대한","에서","으로","하기","하는","있는","없는","합니다","했다","이다","같은","등","더","좀","매우","너무","되다","하다","있다","없다"]);
-        const counts=Object.create(null);
-        (text||"").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu," ").split(/\s+/)
-          .filter(w=>w && w.length>1 && !stop.has(w))
-          .forEach(w=>counts[w]=(counts[w]||0)+1);
-        return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,k).map(([w])=>w);
-      }
-      function jaccardSim(a,b){ const sa=new Set(a.split(/\s+/)); const sb=new Set(b.split(/\s+/)); const inter=[...sa].filter(x=>sb.has(x)).length; const uni=new Set([...sa,...sb]).size; return uni? inter/uni:0; }
-      function uniqueBySimilarity(arr,th=0.42){ const out=[]; for(const t of arr){ if(out.every(o=>jaccardSim(o,t)<th)) out.push(t);} return out; }
-
-      function generateTitleIdeasLocalV2(baseKeyword, n, refText, refTitleList){
-        if(!baseKeyword || !baseKeyword.trim()) return [];
-        const base = baseKeyword.trim();
-        const year = new Date().getFullYear();
-        const terms = Array.from(new Set([...(topTerms(refText,6)||[]), ...(refTitleList||[]).flatMap(t=>topTerms(t,2))])).slice(0,6);
-
-        const makers = [
-          ()=>`${base} ${["완전정복","핵심가이드","한눈에 정리"][Math.floor(Math.random()*3)]}${terms[0]?": "+terms[0]+" 중심으로":""}`,
-          ()=>`${year}년 ${base} ${["트렌드","전략","활용법"][Math.floor(Math.random()*3)]}${terms[1]?" · "+terms[1]:""}`,
-          ()=>`${base} ${["입문","실무","고급"][Math.floor(Math.random()*3)]}자가 꼭 보는 ${["체크리스트","핵심 7가지","로드맵"][Math.floor(Math.random()*3)]}`,
-          ()=>`${base} ${["10분 요약","요약과 사례","스텝바이스텝"][Math.floor(Math.random()*3)]}${terms[2]?" · "+terms[2]:""}`,
-          ()=>`${["Q&A","FAQ"][Math.floor(Math.random()*2)]}: ${base} ${["자주 묻는 질문","궁금증 총정리"][Math.floor(Math.random()*2)]}${terms[3]?" ("+terms[3]+")":""}`,
-          ()=>`${base} 비교/선택 가이드: ${["무엇이 다를까?","최적의 선택 기준","가성비 포인트"][Math.floor(Math.random()*3)]}`,
-          ()=>`${base} ${["실전 팁","전략","사례 모음"][Math.floor(Math.random()*3)]}${terms[4]?": "+terms[4]:""}`,
-        ];
-        terms.slice(0,3).forEach(t => makers.push(()=>`${base} ${t} 활용법: ${["실전 예시","단계별 가이드","체크포인트"][Math.floor(Math.random()*3)]}`));
-
-        let pool = makers.map(fn=>fn());
-        (refTitleList||[]).forEach(raw=>{
-          const t = String(raw).replace(/\s+/g," ").trim();
-          if(t && t.length<=80 && !/\.[a-z]{2,}$/i.test(t)) pool.push(`${base}: ${t}`);
-        });
-        pool = uniqueBySimilarity(pool, 0.42);
-
-        const need = Math.max(1, Number(n)||5);
-        const variants = [" (실전 사례)"," (초보용)"," (업데이트)"," – 한눈에"];
-        let i=0;
-        while(pool.length < need && i < 60){
-          const v = makers[i % makers.length]() + variants[i % variants.length];
-          if(pool.every(t=>jaccardSim(t,v)<0.42)) pool.push(v);
-          i++;
-        }
-        return pool.slice(0, need);
-      }
-
-      async function generateTitleIdeasAI({ baseKeyword, n, ref }){
-        if(!apiKey) throw new Error("OpenAI API 키를 먼저 입력하세요.");
-        const payload = {
-          model: "gpt-5",
-          temperature: 0.7,
-          messages: [
-            { role:"system", content:"You generate Korean blog titles only. Return STRICT JSON: {\"titles\":[\"...\"]}. No prose." },
-            { role:"user", content:
-`키워드: ${baseKeyword}
-참고 텍스트(스타일/느낌 반영):
-${(ref||"").slice(0,2000)}
-
-제목 개수: ${Math.max(1, Number(n)||5)}
-요구사항:
-- 한국어 제목만 생성
-- 참고 텍스트의 어휘/톤/리듬을 '가볍게' 반영 (직접 인용 금지)
-- 클릭 과장 금지, 정보성 위주
-- 중복/유사 패턴 최소화
-- JSON만 반환: {"titles":["제목1","제목2",...]}` }
-          ]
-        };
-        const resp = await fetch("https://api.openai.com/v1/chat/completions",{
-          method:"POST",
-          headers:{ "Content-Type":"application/json", Authorization:`Bearer ${apiKey}` },
-          body: JSON.stringify(payload)
-        });
-        if(!resp.ok){ const t = await resp.text(); throw new Error(`OpenAI 오류: ${resp.status} ${t}`); }
-        const data = await resp.json();
-        const content = data?.choices?.[0]?.message?.content || "{}";
-        let parsed; try{ parsed = JSON.parse(content); } catch{ parsed = JSON.parse(content.replace(/^```json\n?|\n?```$/g,"")); }
-        const arr = Array.isArray(parsed?.titles) ? parsed.titles : [];
-        return arr.filter(Boolean).slice(0, Math.max(1, Number(n)||5));
-      }
-
-      async function fetchTitlesFromURL(){
-        setError(""); setRefTitles([]);
-        if(!(referenceUrl||"").trim()) return;
-        const url = referenceUrl.trim();
-        const tryUrls = [url];
-        if(!/^https?:\/\//i.test(url)) tryUrls.unshift("https://" + url);
-        tryUrls.push(`https://r.jina.ai/http/${url.replace(/^https?:\/\//,'')}`);
-        tryUrls.push(`https://r.jina.ai/https/${url.replace(/^https?:\/\//,'')}`);
-
-        let text = "";
-        for(const u of tryUrls){
-          try{
-            const r = await fetch(u, { mode:"cors" });
-            if(r.ok){ text = await r.text(); if(text) break; }
-          }catch{}
-        }
-        if(!text){ setError("페이지를 불러오지 못했습니다(CORS 가능). URL 확인 또는 텍스트를 직접 붙여넣어 주세요."); return; }
-
-        const found = new Set();
-        const strip = (s)=> (s||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
-        const add = (s)=>{ const t=strip(s); if(t && t.length>6 && t.length<120) found.add(t); };
-
-        (text.match(/<meta[^>]+property=['"]og:title['"][^>]+content=['"]([^'"]+)['"][^>]*>/ig)||[])
-          .forEach(m=>{ const g=/content=['"]([^'"]+)['"]/i.exec(m); if(g) add(g[1]); });
-        (text.match(/<(h1|h2|h3)[^>]*>([\s\S]*?)<\/\1>/ig)||[]).forEach(m=> add(m));
-        (text.match(/<strong[^>]*>([\s\S]*?)<\/strong>/ig)||[]).forEach(m=> add(m));
-        (text.match(/<a [^>]*>([\s\S]*?)<\/a>/ig)||[]).slice(0,400).forEach(m=> add(m));
-
-        const list = Array.from(found).slice(0, 40);
-        setRefTitles(list);
-      }
-
-      function generateBody({ title, toneStyle, authorType, draft, factUrl, minChars, authorCustom, toneCustom }){
-        const effAuthor = (authorType==="기타(직접 입력)" ? (authorCustom||"작성자") : authorType);
-        const effTone = (toneStyle==="기타(직접 입력)" ? (toneCustom||"중립적") : toneStyle);
-
-        const h2sBase = [
-          "핵심 개념 한눈에 정리","상황별 문제와 해결 시나리오","단계별 실천 가이드",
-          "검증된 팁 & 체크리스트","자주 묻는 질문과 답변","실전 적용 사례 ①",
-          "실전 적용 사례 ②","주의할 점과 리스크 관리","추가 자료와 확장 아이디어","마무리 점검표"
-        ];
-        const refTerms = topTerms(draft, 3);
-        const h2s = h2sBase.slice(0, 6 + Math.floor(Math.random()*3));
-        if (refTerms[0]) h2s[0] = `핵심 개념: ${refTerms[0]} 중심으로`;
-        if (refTerms[1] && h2s[2]) h2s[2] = `실천 가이드: ${refTerms[1]} 시작하기`;
-        if (refTerms[2] && h2s[3]) h2s[3] = `체크리스트: ${refTerms[2]} 점검`;
-
-        const opener =
-          effTone === "친근하고 유쾌한"
-            ? "가볍게 시작해 볼게요. 복잡해 보이지만 핵심만 딱 잡으면 생각보다 쉬워요."
-            : effTone === "진지하고 정보성 강한"
-            ? "핵심 정보를 간결하게 정리합니다. 과장 없이 근거 중심으로 설명합니다."
-            : "전문성과 신뢰를 바탕으로 실전적인 관점에서 정리합니다.";
-
-        let md = `# ${title}
-
-> 작성자 유형: **${effAuthor}**, 톤앤매너: **${effTone}**
-
-## 서론
-${opener}
-이 글은 문제를 짚고 해결 방향을 제시한 뒤, 바로 적용할 수 있는 단계별 가이드를 제공합니다.${draft ? ` 아래 초안을 참고하여 흐름과 강조점을 반영했습니다.` : ""}
-
-${draft ? `> 제공된 초안(요약): ${draft.slice(0,200)}${draft.length>200?"…":""}` : ""}
-
-## 본문
-`;
-
-        h2s.forEach((h2,idx)=>{
-          let section = `
-### ${h2}
-- 핵심 포인트: 주제를 한 문장으로 요약합니다.
-- 왜 중요한가: 실제 문제 상황에서 어떤 차이를 만드는지 설명합니다.
-- 어떻게: 2~3단계로 바로 실행 가능한 방법을 제시합니다.
-- 예시: 간단한 미니 사례를 들어 이해를 돕습니다.
-`;
-          while(new Blob([section]).size < 650){
-            section += `- 팁: 작은 실험으로 시작하고 기록을 남기면 개선 속도가 빨라집니다.\n`;
-            section += `- 주의: 맥락 없이 따라 하면 효과가 떨어질 수 있습니다. 자신의 상황에 맞춰 조정하세요.\n`;
-            if (idx % 2 === 0) section += `- 보너스: 체크리스트로 마무리 점검을 하면 누락을 줄일 수 있습니다.\n`;
-          }
-          md += section + "\n";
-        });
-
-        md += `### 실전 적용 사례 ①
-- 배경: 작은 목표로 시작해 빠르게 반복한 사례.
-- 실행: 1) 기준 정하기 2) 기록하기 3) 개선 포인트 반영.
-- 결과: 단기간에 가시적인 변화 확인, 재현 가능성 높음.
-
-### 실전 적용 사례 ②
-- 배경: 팀 단위로 프로세스를 표준화한 사례.
-- 실행: 1) 역할 정의 2) 체크리스트 운영 3) 피드백 루프.
-- 결과: 품질 편차 감소, 작업 시간 단축, 재사용성 향상.
-
-`;
-        if((factUrl||"").trim()){
-          md += `> 팩트 체크: 아래 출처를 참고해 핵심 주장/숫자를 검토했습니다.\n> ${factUrl.trim()}\n\n`;
-        }
-
-        md += `## 결론
-핵심을 다시 정리하면, **작게 시작 → 빠른 기록 → 반복 개선**이 성과를 가깝게 만듭니다.
-마지막으로 독자님께 묻습니다. 지금 바로 적용해 볼 수 있는 가장 작은 실험은 무엇인가요? 댓글로 공유해 주세요!
-
-## 추천 태그
-#가이드 #체크리스트 #실전팁 #사례분석 #문제해결 #초보가이드 #전략 #프로세스 #반복개선 #품질관리
-`;
-
-        const minLen = Math.max(800, Number(minChars)||1000);
-        while(md.length < minLen){
-          md += `\n> 참고: 오늘 한 가지라도 작게 적용해 보세요. 작은 성공이 다음 행동을 쉽게 만듭니다.`;
-        }
-        return md;
-      }
-
-      const canGoStep3 = (selectedTitle||"").trim().length > 0;
-
-      async function onGenerateTitles(){
-        try{
-          setError(""); setLoading(true);
-          let ideas = [];
-          if(useAI && apiKey){
-            ideas = await generateTitleIdeasAI({ baseKeyword: keyword, n: titleCount, ref: referenceText });
-          }else{
-            ideas = generateTitleIdeasLocalV2(keyword, titleCount, referenceText, refTitles);
-          }
-          if(!ideas || ideas.length===0){
-            ideas = generateTitleIdeasLocalV2(keyword, titleCount, referenceText, refTitles);
-          }
-          setTitleIdeas(ideas);
-          setSelectedTitle("");
-        }catch(e){
-          setError(e.message || String(e));
-        }finally{
-          setLoading(false);
-        }
-      }
-
-      function onGenerateBody(){
-        const md = generateBody({
-          title: selectedTitle, toneStyle, authorType, draft, factUrl, minChars, authorCustom, toneCustom
-        });
-        setMarkdown(md);
-      }
-
-      return (
-        <>
-          {/* Tabs */}
-          <div className="tabs">
-            {[1,2,3].map(n=>(
-              <button key={n} className={"tab"+(activeStep===n?" active":"")} onClick={()=>setActiveStep(n)}>
-                {n}단계
-              </button>
-            ))}
+  return (
+    <div className="min-h-screen bg-gray-900 text-gray-100 p-6 flex flex-col items-center">
+      <Card className="w-full max-w-2xl bg-gray-800 shadow-lg rounded-2xl">
+        <CardContent className="p-6 space-y-6">
+          {/* STEP NAV */}
+          <div className="flex justify-between text-sm text-gray-400">
+            <span className={step === 1 ? "text-white font-bold" : ""}>1. API Key</span>
+            <span className={step === 2 ? "text-white font-bold" : ""}>2. 키워드 & 제목</span>
+            <span className={step === 3 ? "text-white font-bold" : ""}>3. 본문 작성</span>
           </div>
 
           {/* STEP 1 */}
-          {activeStep===1 && (
-            <section className="card">
-              <div className="stephead">
-                <h2 style={{margin:0,fontSize:16,fontWeight:600}}>1. API 연동 (선택)</h2>
-                <span className="pill">STEP 1</span>
-              </div>
-
-              <div style={{display:"grid",gap:12}}>
-                <label className="label" style={{display:"flex",alignItems:"center",gap:8}}>
-                  <input type="checkbox" checked={useAI} onChange={(e)=>setUseAI(e.target.checked)} />
-                  OpenAI API 사용
-                </label>
-                {useAI && (
-                  <div>
-                    <label className="label">OpenAI API 키</label>
-                    <input className="input" type="password" value={apiKey} onChange={(e)=>setApiKey(e.target.value)} placeholder="sk-..." />
-                  </div>
-                )}
-                <div className="note">
-                  • <b style={{color:"#e2e8f0"}}>API 사용</b>: AI 기반 제목(품질↑) · <b style={{color:"#e2e8f0"}}>미사용</b>: 로컬 규칙 기반(속도/안정성↑)
-                </div>
-              </div>
-
-              <div style={{marginTop:16,display:"flex",gap:8,justifyContent:"flex-end"}}>
-                <button className="btn" onClick={()=>setActiveStep(2)}>다음(2단계)</button>
-              </div>
-            </section>
+          {step === 1 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold">OpenAI API Key 입력</h2>
+              <Input
+                type="password"
+                placeholder="API Key (선택)"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+              />
+              <Button className="w-full" onClick={() => setStep(2)}>다음 단계</Button>
+            </div>
           )}
 
           {/* STEP 2 */}
-          {activeStep===2 && (
-            <section className="card">
-              <div className="stephead">
-                <h2 style={{margin:0,fontSize:16,fontWeight:600}}>2. 키워드/개수 & 참고 소스</h2>
-                <span className="pill">STEP 2</span>
+          {step === 2 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold">키워드 입력 및 제목 후보 생성</h2>
+              <Input
+                placeholder="예: 개인정보 보호법"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+              />
+              <Textarea
+                placeholder="참고할 내용을 입력하세요 (선택)"
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+              />
+
+              {/* 형식 선택 */}
+              <div>
+                <label className="block mb-2">제목 형식 선택</label>
+                <Select value={format} onValueChange={setFormat}>
+                  <SelectTrigger className="w-full bg-gray-700">
+                    <SelectValue placeholder="형식 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="question">질문형</SelectItem>
+                    <SelectItem value="command">명령형</SelectItem>
+                    <SelectItem value="list">리스트형</SelectItem>
+                    <SelectItem value="compare">비교형</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
-              <div className="grid-2">
-                <div>
-                  <label className="label">키워드(쉼표 구분 허용)</label>
-                  <input className="input" value={keyword} onChange={(e)=>setKeyword(e.target.value)} placeholder="예) AI, 블로그 자동화, 생산성" />
-                </div>
-                <div>
-                  <label className="label">제목 생성 개수</label>
-                  <input className="number" type="number" min="1" max="20" value={titleCount}
-                         onChange={(e)=>{ const v=parseInt(e.target.value||"0",10); setTitleCount(Number.isFinite(v)?v:5); }} />
-                </div>
+              {/* 톤 슬라이더 */}
+              <div>
+                <label className="block mb-2">감성 ↔ 이성 톤</label>
+                <Slider min={1} max={5} step={1} value={[tone]} onValueChange={(val) => setTone(val[0])} />
+                <p className="text-sm text-gray-400 mt-1">현재 값: {tone}</p>
               </div>
 
-              <div className="subCard" style={{marginTop:12}}>
-                <div className="sectionTitle">참고 텍스트</div>
-                <textarea className="textarea" value={referenceText} onChange={(e)=>setReferenceText(e.target.value)}
-                  placeholder="이 문단의 톤/리듬/어휘를 참고해 제목을 만들어줘…" />
-                <div className="note" style={{marginTop:6}}>• 붙여넣을수록 스타일 반영이 좋아집니다.</div>
-              </div>
+              <Button className="w-full" onClick={generateTitles}>제목 후보 생성</Button>
+            </div>
+          )}
+          {/* STEP 3 */}
+          {step === 3 && (
+            <div className="space-y-6">
+              <h2 className="text-xl font-semibold">제목 선택 → 본문 작성 & 검수</h2>
 
-              <div className="subCard" style={{marginTop:12}}>
-                <div className="sectionTitle">웹페이지 URL에서 제목 참고(실험)</div>
-                <div className="stack">
-                  <input className="input" value={referenceUrl} onChange={(e)=>setReferenceUrl(e.target.value)} placeholder="https://blog.example.com/list" />
-                  <button className="btn" onClick={fetchTitlesFromURL}>제목 불러오기</button>
-                </div>
-                {refTitles.length>0 && (
-                  <div className="note" style={{marginTop:8}}>
-                    웹에서 탐지한 제목 {refTitles.length}개 중 일부:
-                    <ul style={{ marginTop: 6 }}>
-                      {refTitles.slice(0,6).map((t,i)=>(<li key={i}>• {t}</li>))}
-                    </ul>
-                  </div>
-                )}
-                <div className="note" style={{marginTop:6}}>
-                  * 일부 사이트는 CORS 정책으로 직접 불러오지 못할 수 있어요. 그 경우 위의 “참고 텍스트”에 복사해 붙여넣어 주세요.
-                </div>
-              </div>
-
-              <div style={{marginTop:16,display:"flex",gap:8,flexWrap:"wrap"}}>
-                <button className="btn" disabled={loading || !(keyword||"").trim().length}
-                        onClick={onGenerateTitles}
-                        style={{opacity: (!(keyword||"").trim().length || loading)? .5: 1}}>
-                  {loading? "생성 중..." : (useAI && apiKey ? "AI로 제목 생성" : "로컬 규칙으로 제목 생성")}
-                </button>
-                {error && <span className="note" style={{color:"#fca5a5"}}>오류: {error}</span>}
-              </div>
-
-              {titleIdeas.length>0 && (
-                <>
-                  <div className="grid-2eq" style={{marginTop:16}}>
-                    {titleIdeas.map((t,i)=>(
-                      <label key={i} className="card" style={{padding:12,cursor:"pointer",boxShadow: (selectedTitle===t? `0 0 0 2px var(--acc2) inset` : "none")}}>
-                        <input type="radio" name="pickTitle" checked={selectedTitle===t} onChange={()=>setSelectedTitle(t)} style={{marginRight:8}} />
-                        <span>{t}</span>
+              {/* 2단계에서 만들어진 제목 후보 표시 */}
+              {titles.length > 0 ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-400">제목 후보 중 하나를 선택하세요.</p>
+                  <div className="space-y-2">
+                    {titles.map((t, idx) => (
+                      <label
+                        key={idx}
+                        className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer border ${
+                          selectedTitle === t ? "border-blue-400 bg-gray-700/50" : "border-gray-700 bg-gray-800"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          className="mt-1"
+                          name="titlePick"
+                          checked={selectedTitle === t}
+                          onChange={() => setSelectedTitle(t)}
+                        />
+                        <span className="leading-relaxed">{t}</span>
                       </label>
                     ))}
                   </div>
-                  <div style={{marginTop:16,display:"flex",gap:8,justifyContent:"space-between",flexWrap:"wrap"}}>
-                    <button className="btnGhost" onClick={()=>setActiveStep(1)}>이전(1단계)</button>
-                    <button className="btn" disabled={!canGoStep3} onClick={()=>setActiveStep(3)} style={{opacity: canGoStep3?1:.5}}>다음(3단계: 본문)</button>
-                  </div>
-                </>
+                </div>
+              ) : (
+                <div className="text-sm text-red-300">
+                  제목 후보가 없습니다. 2단계에서 “제목 후보 생성”을 먼저 실행하세요.
+                </div>
               )}
-            </section>
-          )}
 
-          {/* STEP 3 */}
-          {activeStep===3 && (
-            <section className="card">
-              <div className="stephead">
-                <h2 style={{margin:0,fontSize:16,fontWeight:600}}>3. 선택한 제목으로 본문 작성</h2>
-                <span className="pill">STEP 3</span>
-              </div>
+              {/* 본문 생성/검수 컨트롤 */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <Button
+                    disabled={!selectedTitle}
+                    onClick={generateBody}
+                    className="w-1/2"
+                  >
+                    본문 생성
+                  </Button>
 
-              <div className="subCard">
-                <div className="sectionTitle">기본</div>
-                <div className="grid-2" style={{alignItems:"end"}}>
-                  <div>
-                    <label className="label">선택한 제목</label>
-                    <input className="input" value={selectedTitle} onChange={(e)=>setSelectedTitle(e.target.value)} />
+                  {/* 간단 검수(시뮬레이션) + 자동 여백 옵션 */}
+                  <div className="flex-1 flex flex-col gap-2">
+                    <label className="flex items-center gap-2 text-sm text-gray-300">
+                      <input
+                        type="checkbox"
+                        defaultChecked
+                        onChange={() => {}}
+                        disabled
+                      />
+                      문장 끝 자동 여백(엔터 2회) — 생성 시 적용됨
+                    </label>
+                    <Button
+                      variant="outline"
+                      className="w-full bg-gray-700 text-gray-100"
+                      onClick={() => {
+                        // 간단한 문장 정리(시뮬레이션). 실제 사용 시 OpenAI 교정 호출 가능
+                        const refined = (body || "")
+                          .replace(/[ \t]+\n/g, "\n")   // 줄 끝 공백 정리
+                          .replace(/\n{3,}/g, "\n\n"); // 과도한 개행 정리
+                        setBody(refined);
+                      }}
+                      disabled={!body}
+                    >
+                      빠른 검수(로컬 정리)
+                    </Button>
                   </div>
-                  <div>
-                    <label className="label">글자수 최소치</label>
-                    <input className="number" type="number" min="800" step="100" value={minChars}
-                           onChange={(e)=>{ const v=parseInt(e.target.value||"0",10); setMinChars(Number.isFinite(v)?v:1000); }} />
-                  </div>
+                </div>
+
+                {/* 결과 본문 */}
+                <div className="space-y-2">
+                  <label className="block text-sm">결과 본문</label>
+                  <Textarea
+                    rows={14}
+                    placeholder="여기에 본문이 생성됩니다."
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                    className="bg-gray-800"
+                  />
                 </div>
               </div>
 
-              <div className="grid-2" style={{marginTop:12}}>
-                <div className="subCard">
-                  <div className="sectionTitle">작성 설정</div>
-                  <label className="label">작성자 유형 (선택)</label>
-                  <select className="select" value={authorType} onChange={(e)=>setAuthorType(e.target.value)}>
-                    <option>친근한 20대 여성 인플루언서</option>
-                    <option>전문가 리뷰어</option>
-                    <option>공급자</option>
-                    <option>실무 매니저</option>
-                    <option>경험 풍부한 사용자</option>
-                    <option>기타(직접 입력)</option>
-                  </select>
-                  {authorType==="기타(직접 입력)" && (
-                    <input className="input" style={{marginTop:8}} placeholder="예: 시니어 데이터 애널리스트" value={authorCustom} onChange={(e)=>setAuthorCustom(e.target.value)} />
-                  )}
-                </div>
-
-                <div className="subCard">
-                  <div className="sectionTitle">톤앤매너</div>
-                  <label className="label">톤앤매너 (선택)</label>
-                  <select className="select" value={toneStyle} onChange={(e)=>setToneStyle(e.target.value)}>
-                    <option>친근하고 유쾌한</option>
-                    <option>전문적이고 신뢰감 있는</option>
-                    <option>진지하고 정보성 강한</option>
-                    <option>기타(직접 입력)</option>
-                  </select>
-                  {toneStyle==="기타(직접 입력)" && (
-                    <input className="input" style={{marginTop:8}} placeholder="예: 담백하고 간결한, 명료한 지시형" value={toneCustom} onChange={(e)=>setToneCustom(e.target.value)} />
-                  )}
-                </div>
+              {/* 네비게이션 */}
+              <div className="flex items-center justify-between">
+                <Button variant="outline" className="bg-gray-700 text-gray-100" onClick={() => setStep(2)}>
+                  이전(2단계)
+                </Button>
+                <div className="text-sm text-gray-400">작성 완료 시 블로그에 붙여넣어 게시하세요.</div>
               </div>
-
-              <div className="subCard" style={{marginTop:12}}>
-                <div className="sectionTitle">선택 입력</div>
-                <label className="label">글 초안 (선택)</label>
-                <textarea className="textarea" value={draft} onChange={(e)=>setDraft(e.target.value)} placeholder="있다면 초안/핵심 포인트를 붙여넣어 주세요." />
-                <label className="label" style={{marginTop:8}}>팩트체크 링크 (선택)</label>
-                <input className="input" type="url" value={factUrl} onChange={(e)=>setFactUrl(e.target.value)} placeholder="https://example.com/data" />
-              </div>
-
-              <div style={{marginTop:16}}>
-                <button className="btn" disabled={!canGoStep3} onClick={onGenerateBody} style={{opacity: canGoStep3?1:.5}}>
-                  본문 생성
-                </button>
-              </div>
-
-              <div className="grid-2eq" style={{marginTop:16}}>
-                <div>
-                  <h3 className="h3">미리보기 (HTML 렌더)</h3>
-                  <div className="prose" dangerouslySetInnerHTML={{__html: html}} />
-                </div>
-                <div>
-                  <h3 className="h3">마크다운 원문</h3>
-                  <textarea className="textarea" rows="16" value={markdown} onChange={(e)=>setMarkdown(e.target.value)} />
-                </div>
-              </div>
-
-              <div style={{marginTop:16,display:"flex",gap:8,alignItems:"center",justifyContent:"space-between"}}>
-                <div className="note">
-                  * 2단계에서 선택한 <b>제목</b>을 중심으로 생성합니다. 작성자/톤/초안/팩트체크는 선택 사항입니다.
-                </div>
-                <div className="stack">
-                  <button className="btnGhost" onClick={()=>setActiveStep(2)}>이전(2단계)</button>
-                  <button className="btnGhost" onClick={()=>window.scrollTo({top:0,behavior:"smooth"})}>맨 위로</button>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {/* Sticky actions */}
-          <div className="sticky">
-            <button className="btnGhost" onClick={()=>setActiveStep(Math.max(1, activeStep-1))}>이전</button>
-            <div className="stack">
-              {activeStep===2 && (
-                <button className="btn" disabled={loading || !(keyword||"").trim().length}
-                        onClick={onGenerateTitles}
-                        style={{opacity: (!(keyword||"").trim().length || loading)? .5: 1}}>
-                  {loading? "생성 중..." : "제목 생성"}
-                </button>
-              )}
-              {activeStep===3 && (
-                <button className="btn" disabled={!canGoStep3} onClick={onGenerateBody} style={{opacity: canGoStep3?1:.5}}>
-                  본문 생성
-                </button>
-              )}
-              <button className="btn" onClick={()=>setActiveStep(Math.min(3, activeStep+1))}>다음</button>
             </div>
-          </div>
-
-          <footer className="container" style={{margin:"32px auto"}}>
-            <hr style={{borderColor:"var(--border)",margin:"12px 0"}} />
-            <p className="note">공개 배포 시 API 키는 프런트에 넣지 말고 서버 프록시를 사용하세요. URL 참조는 CORS 정책에 따라 제한될 수 있습니다.</p>
-          </footer>
-        </>
-      );
-    }
-
-    // 렌더 시도 + 화면 배너로 에러 표시
-    try{
-      const root = ReactDOM.createRoot(document.getElementById("app"));
-      root.render(<App />);
-    }catch(err){
-      const box = document.getElementById('err');
-      box.classList.add('show');
-      box.textContent = "렌더 오류: " + (err && err.message ? err.message : err);
-      console.error(err);
-    }
-  </script>
-</body>
-</html>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
