@@ -1,145 +1,161 @@
-import React, { useMemo, useState, useEffect } from "react";
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>글쓰기 자동화 · 3단계 마법사 (Demo)</title>
+  <style>
+    html,body,#root{height:100%;margin:0}
+    /* 시스템 폰트 스택 (가독성/한글) */
+    body{font-family:"Noto Sans KR",system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Malgun Gothic,"맑은 고딕",Arial,sans-serif}
+    /* 스크롤바 살짝 어둡게 */
+    ::-webkit-scrollbar{height:10px;width:10px}
+    ::-webkit-scrollbar-thumb{background:#1f2430;border-radius:8px}
+  </style>
+  <!-- React / ReactDOM / Babel (개발용 CDN) -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
+</head>
+<body>
+  <div id="root"></div>
 
-// NaverWizardDark – mobile-first, Step1(API key only) → Step2(keyword+title gen) → Step3(body+review)
-export default function NaverWizardDark() {
-  const palette = {
-    bg: "#0b0c0f",
-    card: "#111318",
-    border: "#1b1e25",
-    text: "#e7eaf0",
-    muted: "#9aa3b2",
-    accent: "#a3bffa",
-    accentPress: "#7aa2f7",
-  };
+  <!-- 여기서부터 JSX 사용 -->
+  <script type="text/babel">
+    const {useMemo,useState,useEffect} = React;
 
-  // ------- Global State -------
-  const [keyword, setKeyword] = useState("");
-  const [referenceText, setReferenceText] = useState("");
-  const [titleCount, setTitleCount] = useState(5);
-  const [titleIdeas, setTitleIdeas] = useState([]);
-  const [selectedTitle, setSelectedTitle] = useState("");
-  const [minChars, setMinChars] = useState(1200);
-  const [markdown, setMarkdown] = useState("");
-  const [activeStep, setActiveStep] = useState(1); // 1,2,3
+    function NaverWizardDark() {
+      const palette = {
+        bg:"#0b0c0f", card:"#111318", border:"#1b1e25",
+        text:"#e7eaf0", muted:"#9aa3b2", accent:"#a3bffa", accentPress:"#7aa2f7",
+      };
 
-  // ------- OpenAI (optional) -------
-  const [apiKey, setApiKey] = useState("");
-  const [useAI, setUseAI] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+      // ------- Global State -------
+      const [keyword, setKeyword] = useState("");
+      const [referenceText, setReferenceText] = useState("");
+      const [titleCount, setTitleCount] = useState(5);
+      const [titleIdeas, setTitleIdeas] = useState([]);
+      const [selectedTitle, setSelectedTitle] = useState("");
+      const [minChars, setMinChars] = useState(1200);
+      const [markdown, setMarkdown] = useState("");
+      const [activeStep, setActiveStep] = useState(1); // 1,2,3
 
-  // 2단계: 감성↔이성 슬라이더(1=감성, 5=이성, 0.5 단위), 형식 펼침 패널
-  const [toneLevel, setToneLevel] = useState(3);
-  const [titleFormat, setTitleFormat] = useState("auto"); // 'auto'|'question'|'command'|'list'|'compare'
-  const [formatOpen, setFormatOpen] = useState(false);
+      // ------- OpenAI (optional) -------
+      const [apiKey, setApiKey] = useState("");
+      const [useAI, setUseAI] = useState(true);
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState("");
 
-  // Review & spacing
-  const [reviewing, setReviewing] = useState(false);
-  const [autoSpacing, setAutoSpacing] = useState(true);
+      // 2단계: 감성↔이성 슬라이더(1=감성, 5=이성, 0.5 단위), 형식 펼침 패널
+      const [toneLevel, setToneLevel] = useState(3);
+      const [titleFormat, setTitleFormat] = useState("auto"); // 'auto'|'question'|'command'|'list'|'compare'
+      const [formatOpen, setFormatOpen] = useState(false);
 
-  useEffect(() => {
-    const saved = localStorage.getItem("naverWizard_openai_key") || "";
-    setApiKey(saved);
-  }, []);
-  useEffect(() => {
-    if (apiKey !== undefined) localStorage.setItem("naverWizard_openai_key", apiKey);
-  }, [apiKey]);
+      // Review & spacing
+      const [reviewing, setReviewing] = useState(false);
+      const [autoSpacing, setAutoSpacing] = useState(true);
 
-  // ------- Markdown → HTML -------
-  function mdToHtml(md) {
-    let h = md || "";
-    h = h.replace(/^# (.+)$/gm, "<h1>$1</h1>");
-    h = h.replace(/^## (.+)$/gm, "<h2>$1</h2>");
-    h = h.replace(/^### (.+)$/gm, "<h3>$1</h3>");
-    h = h.replace(/^> (.+)$/gm, "<blockquote>$1</blockquote>");
-    h = h.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    h = h.replace(/\*(.+?)\*/g, "<em>$1</em>");
-    h = h.replace(/`([^`]+)`/g, "<code>$1</code>");
-    h = h.replace(/^\s*[-*]\s+(.+)$/gm, "<li>$1</li>");
-    h = h.replace(/(<li>.*<\/li>\n?)+/g, (m) => "<ul>" + m + "</ul>");
-    h = h.replace(/\n\n+/g, "<br/><br/>");
-    return h;
-  }
-  const html = useMemo(() => mdToHtml(markdown), [markdown]);
+      useEffect(() => {
+        const saved = localStorage.getItem("naverWizard_openai_key") || "";
+        setApiKey(saved);
+      }, []);
+      useEffect(() => {
+        if (apiKey !== undefined) localStorage.setItem("naverWizard_openai_key", apiKey);
+      }, [apiKey]);
 
-  // ------- Helpers -------
-  function topTerms(text, k = 5) {
-    const stop = new Set([
-      "그리고","그러나","하지만","또는","또","이미","또한","그","이","저","것","수","때문","대한","에서","으로","하기","하는","있는","없는","합니다","했다","이다","같은","등","더","좀","매우","너무","되다","하다","있다","없다"
-    ]);
-    const counts = Object.create(null);
-    (text || "").toLowerCase()
-      .replace(/[^\p{L}\p{N}\s]/gu, " ")
-      .split(/\s+/)
-      .filter(w => w && w.length > 1 && !stop.has(w))
-      .forEach(w => { counts[w] = (counts[w]||0)+1; });
-    return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,k).map(([w])=>w);
-  }
-
-  // ------- Title generators -------
-  function generateTitleIdeasLocal(baseKeyword, n, ref, opts = { toneLevel:3, format:"auto" }) {
-    if (!baseKeyword || !baseKeyword.trim()) return [];
-    const base = baseKeyword.trim();
-    const refTerms = topTerms(ref, 4);
-    const refHint = refTerms.length ? ` (${refTerms.join(" · ")})` : "";
-
-    const em = opts.toneLevel ?? 3;
-    const emotional = em <= 2.0;   // 은근한 이득 암시
-    const rational  = em >= 4.0;   // 숫자/근거/구조
-
-    const emoHooks = [
-      `${base}의 숨은 혜택`, `${base}로 달라지는 하루`, `${base}를 알면 편해지는 이유`, `${base} 작은 비밀`
-    ];
-    const ratHooks = [
-      `${base} 핵심 지표`, `${base} 3가지 핵심`, `${base} 실무 체크리스트`, `${base} 데이터로 보는 변화`
-    ];
-
-    const frames = [
-      ...(emotional ? [
-        `${emoHooks[0]}: 알아두면 득이 되는 가이드` + refHint,
-        `모두가 지나치는 ${base}의 ${emoHooks[3]}` + refHint,
-      ] : []),
-      ...(rational ? [
-        `${ratHooks[1]}: 실전 적용 포인트` + refHint,
-        `${base} ${ratHooks[2]} (실무 기준)` + refHint,
-      ] : []),
-      `${base} 최신 트렌드와 사례: 지금 적용하는 법` + refHint,
-      `${base} Q&A: 자주 묻는 질문 총정리` + refHint,
-      `${base} 핵심만 요약: 꼭 알아야 할 체크포인트` + refHint,
-    ];
-
-    function shapeByFormat(s) {
-      switch (opts.format) {
-        case "question": return `${base}는 무엇일까? ${refTerms[0] ? `(${refTerms[0]})` : ""}`.trim();
-        case "command":  return `지금 알아야 할 ${base} 핵심 가이드`;
-        case "list":     return `${base} 핵심 포인트 3가지`;
-        case "compare":  return `${base} 전/후 비교: 달라진 점과 대응`;
-        default:         return s;
+      // ------- Markdown → HTML -------
+      function mdToHtml(md) {
+        let h = md || "";
+        h = h.replace(/^# (.+)$/gm, "<h1>$1</h1>");
+        h = h.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+        h = h.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+        h = h.replace(/^> (.+)$/gm, "<blockquote>$1</blockquote>");
+        h = h.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+        h = h.replace(/\*(.+?)\*/g, "<em>$1</em>");
+        h = h.replace(/`([^`]+)`/g, "<code>$1</code>");
+        h = h.replace(/^\s*[-*]\s+(.+)$/gm, "<li>$1</li>");
+        h = h.replace(/(<li>.*<\/li>\n?)+/g, (m) => "<ul>" + m + "</ul>");
+        h = h.replace(/\n\n+/g, "<br/><br/>");
+        return h;
       }
-    }
+      const html = useMemo(() => mdToHtml(markdown), [markdown]);
 
-    const shuffled = [...frames].sort(() => Math.random() - 0.5);
-    const count = Math.max(1, Number(n) || 5);
-    const out = [];
-    const used = new Set();
-    for (let i = 0; i < count; i++) {
-      const f = shapeByFormat(shuffled[i % shuffled.length]);
-      const title = f;
-      if (used.has(title)) continue;
-      used.add(title);
-      out.push(title);
-    }
-    return out;
-  }
+      // ------- Helpers -------
+      function topTerms(text, k = 5) {
+        const stop = new Set(["그리고","그러나","하지만","또는","또","이미","또한","그","이","저","것","수","때문","대한","에서","으로","하기","하는","있는","없는","합니다","했다","이다","같은","등","더","좀","매우","너무","되다","하다","있다","없다"]);
+        const counts = Object.create(null);
+        (text || "").toLowerCase()
+          .replace(/[^\p{L}\p{N}\s]/gu, " ")
+          .split(/\s+/)
+          .filter(w => w && w.length > 1 && !stop.has(w))
+          .forEach(w => { counts[w] = (counts[w]||0)+1; });
+        return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,k).map(([w])=>w);
+      }
 
-  async function generateTitleIdeasAI({ baseKeyword, n, ref, opts }) {
-    if (!apiKey) throw new Error("OpenAI API 키를 먼저 입력하세요.");
-    const payload = {
-      model: "gpt-5",
-      temperature: 0.7,
-      messages: [
-        { role: "system", content: "You generate Korean blog title ideas only. Return STRICT JSON with the schema {\"titles\":[\"...\"]}." },
-        { role: "user", content:
+      // ------- Title generators -------
+      function generateTitleIdeasLocal(baseKeyword, n, ref, opts = { toneLevel:3, format:"auto" }) {
+        if (!baseKeyword || !baseKeyword.trim()) return [];
+        const base = baseKeyword.trim();
+        const refTerms = topTerms(ref, 4);
+        const refHint = refTerms.length ? ` (${refTerms.join(" · ")})` : "";
+
+        const em = opts.toneLevel ?? 3;
+        const emotional = em <= 2.0;   // 은근한 이득 암시
+        const rational  = em >= 4.0;   // 숫자/근거/구조
+
+        const emoHooks = [
+          `${base}의 숨은 혜택`, `${base}로 달라지는 하루`, `${base}를 알면 편해지는 이유`, `${base} 작은 비밀`
+        ];
+        const ratHooks = [
+          `${base} 핵심 지표`, `${base} 3가지 핵심`, `${base} 실무 체크리스트`, `${base} 데이터로 보는 변화`
+        ];
+
+        const frames = [
+          ...(emotional ? [
+            `${emoHooks[0]}: 알아두면 득이 되는 가이드` + refHint,
+            `모두가 지나치는 ${base}의 ${emoHooks[3]}` + refHint,
+          ] : []),
+          ...(rational ? [
+            `${ratHooks[1]}: 실전 적용 포인트` + refHint,
+            `${base} ${ratHooks[2]} (실무 기준)` + refHint,
+          ] : []),
+          `${base} 최신 트렌드와 사례: 지금 적용하는 법` + refHint,
+          `${base} Q&A: 자주 묻는 질문 총정리` + refHint,
+          `${base} 핵심만 요약: 꼭 알아야 할 체크포인트` + refHint,
+        ];
+
+        function shapeByFormat(s) {
+          switch (opts.format) {
+            case "question": return `${base}는 무엇일까? ${refTerms[0] ? `(${refTerms[0]})` : ""}`.trim();
+            case "command":  return `지금 알아야 할 ${base} 핵심 가이드`;
+            case "list":     return `${base} 핵심 포인트 3가지`;
+            case "compare":  return `${base} 전/후 비교: 달라진 점과 대응`;
+            default:         return s;
+          }
+        }
+
+        const shuffled = [...frames].sort(() => Math.random() - 0.5);
+        const count = Math.max(1, Number(n) || 5);
+        const out = [];
+        const used = new Set();
+        for (let i = 0; i < count; i++) {
+          const f = shapeByFormat(shuffled[i % shuffled.length]);
+          const title = f;
+          if (used.has(title)) continue;
+          used.add(title);
+          out.push(title);
+        }
+        return out;
+      }
+
+      async function generateTitleIdeasAI({ baseKeyword, n, ref, opts }) {
+        if (!apiKey) throw new Error("OpenAI API 키를 먼저 입력하세요.");
+        const payload = {
+          model: "gpt-5",
+          temperature: 0.7,
+          messages: [
+            { role: "system", content: "You generate Korean blog title ideas only. Return STRICT JSON with the schema {\"titles\":[\"...\"]}." },
+            { role: "user", content:
 `키워드: ${baseKeyword}
 제목 개수: ${Math.max(1, Number(n)||5)}
 참고 내용(선택): ${(ref||"").slice(0, 2000)}
@@ -153,430 +169,435 @@ export default function NaverWizardDark() {
 - 과장/스팸/낚시 금지, 한국어 자연스러움 유지.
 - JSON만 반환: {"titles":["제목1","제목2",...]}
 ` },
-      ],
-    };
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify(payload),
-    });
-    if (!resp.ok) {
-      const t = await resp.text();
-      throw new Error(`OpenAI 오류: ${resp.status} ${t}`);
-    }
-    const data = await resp.json();
-    const content = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || "";
-    let parsed = null;
-    try { parsed = JSON.parse(content); } catch {
-      const stripped = content.replace(/^```json\n?|```$/g, "");
-      parsed = JSON.parse(stripped);
-    }
-    const arr = (parsed && Array.isArray(parsed.titles)) ? parsed.titles : [];
-    return arr.filter(Boolean).slice(0, Math.max(1, Number(n)||5));
-  }
-
-  // ------- Body generator -------
-  function generateBody({ title, keyword, minChars }) {
-    const kws = (keyword || "").split(/[ ,\s]+/).filter(Boolean);
-    const main = kws[0] || keyword || "키워드";
-
-    const intro = [
-      "## 서론",
-      `${main}의 핵심을 빠르게 이해할 수 있도록 개요와 읽는 이유를 먼저 제시합니다.`,
-      "본문에서는 개념 → 적용 → 체크리스트 순서로 정리합니다.",
-    ].join("\n");
-
-    const bullets =
-      kws.slice(0, 4).map((k) => `- **${k}**: 왜 중요한지, 어디에 쓰이는지 한 줄 요약`).join("\n");
-
-    const core = [
-      "## 본론",
-      "### 핵심 개념",
-      bullets || "- **핵심 포인트**: 주제를 한 문장으로 요약",
-      "",
-      "### 사례와 적용",
-      "- 실제 적용 흐름을 2~3단계로 나눠 설명",
-      "- 숫자/비교/비유를 적절히 사용해 이해도 향상",
-      "",
-      "### 체크리스트",
-      "- 오늘 바로 적용할 수 있는 3가지 행동",
-      "- 흔한 실수와 피해야 할 점",
-    ].join("\n");
-
-    const outro = [
-      "## 결론",
-      `${main}의 핵심을 다시 정리하고, 다음 행동 제안을 덧붙입니다.`,
-      `- 한 문장 요약: ${main}은(는) **작게 시작하고 반복**할 때 성과가 납니다.`,
-      "- 다음 단계: 체크리스트 실행 → 결과 기록 → 개선 포인트 반영",
-    ].join("\n");
-
-    let md = `# ${title}\n\n${intro}\n\n${core}\n\n${outro}\n\n## 핵심 요약\n- ${main} 핵심만 간단히 정리\n- 오늘 바로 적용할 3가지 행동\n- 다음 글에서 다룰 확장 주제 예고`;
-    const minLen = Math.max(400, Number(minChars) || 800);
-    while (md.length < minLen) {
-      md += `\n\n> 참고: ${main}을(를) 익히려면 작은 실험을 꾸준히 반복하고 기록을 남기세요.`;
-    }
-    return md;
-  }
-
-  // ------- Spacing & Review -------
-  function addDoubleBreaks(text) {
-    if (!text) return text;
-    const withBreaks = text
-      .replace(/([.!?])( *)(?=\S)/g, "$1\n\n")
-      .replace(/\n{3,}/g, "\n\n");
-    return withBreaks;
-  }
-
-  function localReview(md) {
-    if (!md) return md;
-    let t = md;
-    t = t.replace(/[ \t]+\n/g, "\n");
-    t = t.replace(/\n{3,}/g, "\n\n");
-    t = t.replace(/ +/g, " ");
-    return t;
-  }
-
-  async function reviewMarkdownAI(md) {
-    if (!apiKey) throw new Error("OpenAI API 키를 먼저 입력하세요.");
-    const guide = [
-      "다음 한국어 마크다운 글을 문법과 흐름 중심으로 자연스럽게 다듬어 주세요.",
-      "- 의미/사실/키워드는 바꾸지 마세요.",
-      "- 헤딩/리스트/강조 표기는 유지.",
-      "- 출력은 순수 마크다운 본문만 반환.",
-    ].join("\n");
-    const payload = {
-      model: "gpt-5",
-      temperature: 0.3,
-      messages: [
-        { role: "system", content: "You are a professional Korean copy editor for blog content." },
-        { role: "user", content: `${guide}\n\n---\n\n${md}` }
-      ],
-    };
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify(payload),
-    });
-    if (!resp.ok) {
-      const t = await resp.text();
-      throw new Error(`OpenAI 오류: ${resp.status} ${t}`);
-    }
-    const data = await resp.json();
-    const content = (data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || "";
-    return content.replace(/^```(?:md|markdown)?\n?|\n?```$/g, "");
-  }
-
-  // ------- Actions -------
-  const canGoStep3 = (selectedTitle || "").trim().length > 0;
-
-  async function onGenerateTitles() {
-    try {
-      setError(""); setLoading(true);
-      const opts = { toneLevel, format: titleFormat };
-      let ideas = [];
-      if (useAI && apiKey) {
-        ideas = await generateTitleIdeasAI({ baseKeyword: keyword, n: titleCount, ref: referenceText, opts });
-      } else {
-        ideas = generateTitleIdeasLocal(keyword, titleCount, referenceText, opts);
-      }
-      if (!ideas || ideas.length === 0) {
-        ideas = generateTitleIdeasLocal(keyword, titleCount, referenceText, opts);
-      }
-      setTitleIdeas(ideas);
-      setSelectedTitle("");
-    } catch (e) {
-      setError(e.message || String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function onGenerateBody() {
-    const md0 = generateBody({ title: selectedTitle, keyword, minChars });
-    const md1 = autoSpacing ? addDoubleBreaks(md0) : md0;
-    setMarkdown(md1);
-  }
-
-  async function onReview() {
-    try {
-      if (!markdown.trim()) return;
-      setError(""); setReviewing(true);
-      let reviewed = markdown;
-
-      if (useAI && apiKey) {
-        reviewed = await reviewMarkdownAI(markdown);
-      } else {
-        reviewed = localReview(markdown);
+          ],
+        };
+        const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) {
+          const t = await resp.text();
+          throw new Error(`OpenAI 오류: ${resp.status} ${t}`);
+        }
+        const data = await resp.json();
+        const content = (data?.choices?.[0]?.message?.content) || "";
+        let parsed = null;
+        try { parsed = JSON.parse(content); } catch {
+          const stripped = content.replace(/^```json\n?|```$/g, "");
+          parsed = JSON.parse(stripped);
+        }
+        const arr = (parsed && Array.isArray(parsed.titles)) ? parsed.titles : [];
+        return arr.filter(Boolean).slice(0, Math.max(1, Number(n)||5));
       }
 
-      reviewed = autoSpacing ? addDoubleBreaks(reviewed) : reviewed.replace(/\n{3,}/g, "\n\n");
-      setMarkdown(reviewed);
-    } catch (e) {
-      setError(e.message || String(e));
-    } finally {
-      setReviewing(false);
-    }
-  }
+      // ------- Body generator -------
+      function generateBody({ title, keyword, minChars }) {
+        const kws = (keyword || "").split(/[ ,\s]+/).filter(Boolean);
+        const main = kws[0] || keyword || "키워드";
 
-  // ------- Styles -------
-  const styles = {
-    app: { backgroundColor: palette.bg, color: palette.text, minHeight: "100vh", fontFamily: "'Noto Sans KR', Arial, sans-serif", paddingBottom: 80 },
-    header: { position: "sticky", top: 0, backdropFilter: "blur(6px)", borderBottom: `1px solid ${palette.border}`, background: "rgba(11,12,15,.65)", marginBottom: 16, zIndex: 10 },
-    container: { maxWidth: 1120, margin: "0 auto", padding: "12px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 },
-    logo: { width: 36, height: 36, borderRadius: 16, display: "grid", placeItems: "center", fontWeight: 700, background: "linear-gradient(180deg,#20314f,#101828)", color: "#dbe7ff" },
-    tabs: { display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" },
-    tab: (active) => ({ border: `1px solid ${palette.border}`, borderRadius: 12, padding: "8px 14px", background: active ? "#111827" : "#0c0f14", color: active ? palette.text : palette.muted, cursor: "pointer", flex: 1, minWidth: 90 }),
-    card: { background: palette.card, border: `1px solid ${palette.border}`, borderRadius: 16, padding: 20, marginBottom: 16 },
-    stepHead: { borderBottom: `1px solid ${palette.border}`, paddingBottom: 8, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" },
-    pill: { padding: "2px 9px", borderRadius: 9999, fontSize: 12, background: "#0f1116", color: palette.muted, border: `1px solid ${palette.border}` },
-    label: { fontSize: 12, color: palette.muted, display: "block", marginBottom: 6 },
-    input: { background: "#0e1117", color: palette.text, border: `1px solid ${palette.border}`, borderRadius: 12, padding: "10px 12px", width: "100%" },
-    number: { background: "#0e1117", color: palette.text, border: `1px solid ${palette.border}`, borderRadius: 12, padding: "10px 12px", width: "100%" },
-    textarea: { background: "#0e1117", color: palette.text, border: `1px solid ${palette.border}`, borderRadius: 12, padding: 12, width: "100%", minHeight: 120 },
-    btn: { backgroundImage: `linear-gradient(180deg, ${palette.accent}, ${palette.accentPress})`, color: "#0b1020", fontWeight: 600, borderRadius: 14, padding: "10px 16px", border: 0, cursor: "pointer" },
-    btnGhost: { background: "transparent", color: palette.text, border: `1px solid ${palette.border}`, borderRadius: 12, padding: "9px 14px", cursor: "pointer" },
-    note: { fontSize: 12, color: palette.muted },
-    h3: { fontWeight: 600, marginBottom: 8, color: "#e9edf7" },
-    prose: { border: `1px solid ${palette.border}`, background: palette.card, borderRadius: 16, padding: 16, minHeight: 240 },
-    stickyMobile: { position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(11,12,15,.9)", borderTop: `1px solid ${palette.border}`, padding: 10, display: "flex", gap: 8, justifyContent: "space-between", zIndex: 20 },
-  };
+        const intro = [
+          "## 서론",
+          `${main}의 핵심을 빠르게 이해할 수 있도록 개요와 읽는 이유를 먼저 제시합니다.`,
+          "본문에서는 개념 → 적용 → 체크리스트 순서로 정리합니다.",
+        ].join("\n");
 
-  const responsiveCSS = `
-    .grid-2 { display:grid; grid-template-columns: 2fr 1fr; gap:12px; }
-    .grid-2-equal { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
-    .stack { display:flex; gap:8px; }
-    .title-h1 { font-size: 18px; font-weight: 600; }
-    @media (max-width: 860px) {
-      .grid-2, .grid-2-equal { grid-template-columns: 1fr; }
-      .stack { flex-direction: column; align-items: stretch; }
-      .title-h1 { font-size: 16px !important; }
-    }
-  `;
+        const bullets = kws.slice(0,4).map(k => `- **${k}**: 왜 중요한지, 어디에 쓰이는지 한 줄 요약`).join("\n");
 
-  // ------- UI -------
-  return (
-    <div style={styles.app}>
-      <style>{responsiveCSS}</style>
+        const core = [
+          "## 본론",
+          "### 핵심 개념",
+          bullets || "- **핵심 포인트**: 주제를 한 문장으로 요약",
+          "",
+          "### 사례와 적용",
+          "- 실제 적용 흐름을 2~3단계로 나눠 설명",
+          "- 숫자/비교/비유를 적절히 사용해 이해도 향상",
+          "",
+          "### 체크리스트",
+          "- 오늘 바로 적용할 수 있는 3가지 행동",
+          "- 흔한 실수와 피해야 할 점",
+        ].join("\n");
 
-      <header style={styles.header}>
-        <div style={styles.container}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={styles.logo}>AW</div>
-            <h1 className="title-h1">글쓰기 자동화 프로그램 · 3단계 마법사</h1>
-          </div>
-        </div>
-      </header>
+        const outro = [
+          "## 결론",
+          `${main}의 핵심을 다시 정리하고, 다음 행동 제안을 덧붙입니다.`,
+          `- 한 문장 요약: ${main}은(는) **작게 시작하고 반복**할 때 성과가 납니다.`,
+          "- 다음 단계: 체크리스트 실행 → 결과 기록 → 개선 포인트 반영",
+        ].join("\n");
 
-      {/* Step tabs */}
-      <nav style={styles.tabs}>
-        {[1, 2, 3].map((n) => (
-          <button key={n} style={styles.tab(activeStep === n)} onClick={() => setActiveStep(n)}>
-            {n}단계
-          </button>
-        ))}
-      </nav>
+        let md = `# ${title}\n\n${intro}\n\n${core}\n\n${outro}\n\n## 핵심 요약\n- ${main} 핵심만 간단히 정리\n- 오늘 바로 적용할 3가지 행동\n- 다음 글에서 다룰 확장 주제 예고`;
+        const minLen = Math.max(400, Number(minChars) || 800);
+        while (md.length < minLen) {
+          md += `\n\n> 참고: ${main}을(를) 익히려면 작은 실험을 꾸준히 반복하고 기록을 남기세요.`;
+        }
+        return md;
+      }
 
-      {/* STEP 1 – API key only */}
-      {activeStep === 1 && (
-        <section style={styles.card}>
-          <div style={styles.stepHead}>
-            <h2 style={{ fontSize: 16, fontWeight: 600 }}>1. OpenAI API 키 입력(선택)</h2>
-            <span style={styles.pill}>STEP 1</span>
-          </div>
+      // ------- Spacing & Review -------
+      function addDoubleBreaks(text) {
+        if (!text) return text;
+        return text
+          .replace(/([.!?])( *)(?=\S)/g, "$1\n\n")
+          .replace(/\n{3,}/g, "\n\n");
+      }
 
-          <div className="grid-2" style={{ marginTop: 12 }}>
-            <div>
-              <label style={styles.label}>OpenAI API 키</label>
-              <input type="password" value={apiKey} onChange={(e)=>setApiKey(e.target.value)} placeholder="sk-..." style={styles.input} />
-              <div style={{ marginTop: 6 }} className="stack">
-                <label style={{ ...styles.label, display: 'inline' }}>
-                  <input type="checkbox" checked={useAI} onChange={(e)=>setUseAI(e.target.checked)} style={{ marginRight: 6 }} />
-                  AI 사용
-                </label>
-                <span style={styles.note}>키가 없으면 로컬 규칙으로 제목을 생성합니다.</span>
+      function localReview(md) {
+        if (!md) return md;
+        let t = md;
+        t = t.replace(/[ \t]+\n/g, "\n");
+        t = t.replace(/\n{3,}/g, "\n\n");
+        t = t.replace(/ +/g, " ");
+        return t;
+      }
+
+      async function reviewMarkdownAI(md) {
+        if (!apiKey) throw new Error("OpenAI API 키를 먼저 입력하세요.");
+        const guide = [
+          "다음 한국어 마크다운 글을 문법과 흐름 중심으로 자연스럽게 다듬어 주세요.",
+          "- 의미/사실/키워드는 바꾸지 마세요.",
+          "- 헤딩/리스트/강조 표기는 유지.",
+          "- 출력은 순수 마크다운 본문만 반환.",
+        ].join("\n");
+        const payload = {
+          model: "gpt-5",
+          temperature: 0.3,
+          messages: [
+            { role: "system", content: "You are a professional Korean copy editor for blog content." },
+            { role: "user", content: `${guide}\n\n---\n\n${md}` }
+          ],
+        };
+        const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) {
+          const t = await resp.text();
+          throw new Error(`OpenAI 오류: ${resp.status} ${t}`);
+        }
+        const data = await resp.json();
+        const content = (data?.choices?.[0]?.message?.content) || "";
+        return content.replace(/^```(?:md|markdown)?\n?|\n?```$/g, "");
+      }
+
+      // ------- Actions -------
+      const canGoStep3 = (selectedTitle || "").trim().length > 0;
+
+      async function onGenerateTitles() {
+        try {
+          setError(""); setLoading(true);
+          const opts = { toneLevel, format: titleFormat };
+          let ideas = [];
+          if (useAI && apiKey) {
+            ideas = await generateTitleIdeasAI({ baseKeyword: keyword, n: titleCount, ref: referenceText, opts });
+          } else {
+            ideas = generateTitleIdeasLocal(keyword, titleCount, referenceText, opts);
+          }
+          if (!ideas || ideas.length === 0) {
+            ideas = generateTitleIdeasLocal(keyword, titleCount, referenceText, opts);
+          }
+          setTitleIdeas(ideas);
+          setSelectedTitle("");
+        } catch (e) {
+          setError(e.message || String(e));
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      function onGenerateBody() {
+        const md0 = generateBody({ title: selectedTitle, keyword, minChars });
+        const md1 = autoSpacing ? addDoubleBreaks(md0) : md0;
+        setMarkdown(md1);
+      }
+
+      async function onReview() {
+        try {
+          if (!markdown.trim()) return;
+          setError(""); setReviewing(true);
+          let reviewed = markdown;
+
+          if (useAI && apiKey) {
+            reviewed = await reviewMarkdownAI(markdown);
+          } else {
+            reviewed = localReview(markdown);
+          }
+
+          reviewed = autoSpacing ? addDoubleBreaks(reviewed) : reviewed.replace(/\n{3,}/g, "\n\n");
+          setMarkdown(reviewed);
+        } catch (e) {
+          setError(e.message || String(e));
+        } finally {
+          setReviewing(false);
+        }
+      }
+
+      // ------- Styles -------
+      const styles = {
+        app: { backgroundColor: palette.bg, color: palette.text, minHeight: "100vh", paddingBottom: 80 },
+        header: { position: "sticky", top: 0, backdropFilter: "blur(6px)", borderBottom: `1px solid ${palette.border}`, background: "rgba(11,12,15,.65)", marginBottom: 16, zIndex: 10 },
+        container: { maxWidth: 1120, margin: "0 auto", padding: "12px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 },
+        logo: { width: 36, height: 36, borderRadius: 16, display: "grid", placeItems: "center", fontWeight: 700, background: "linear-gradient(180deg,#20314f,#101828)", color: "#dbe7ff" },
+        tabs: { display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" },
+        tab: (active) => ({ border: `1px solid ${palette.border}`, borderRadius: 12, padding: "8px 14px", background: active ? "#111827" : "#0c0f14", color: active ? palette.text : palette.muted, cursor: "pointer", flex: 1, minWidth: 90 }),
+        card: { background: palette.card, border: `1px solid ${palette.border}`, borderRadius: 16, padding: 20, marginBottom: 16 },
+        stepHead: { borderBottom: `1px solid ${palette.border}`, paddingBottom: 8, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" },
+        pill: { padding: "2px 9px", borderRadius: 9999, fontSize: 12, background: "#0f1116", color: palette.muted, border: `1px solid ${palette.border}` },
+        label: { fontSize: 12, color: palette.muted, display: "block", marginBottom: 6 },
+        input: { background: "#0e1117", color: palette.text, border: `1px solid ${palette.border}`, borderRadius: 12, padding: "10px 12px", width: "100%" },
+        number: { background: "#0e1117", color: palette.text, border: `1px solid ${palette.border}`, borderRadius: 12, padding: "10px 12px", width: "100%" },
+        textarea: { background: "#0e1117", color: palette.text, border: `1px solid ${palette.border}`, borderRadius: 12, padding: 12, width: "100%", minHeight: 120 },
+        btn: { backgroundImage: `linear-gradient(180deg, ${palette.accent}, ${palette.accentPress})`, color: "#0b1020", fontWeight: 600, borderRadius: 14, padding: "10px 16px", border: 0, cursor: "pointer" },
+        btnGhost: { background: "transparent", color: palette.text, border: `1px solid ${palette.border}`, borderRadius: 12, padding: "9px 14px", cursor: "pointer" },
+        note: { fontSize: 12, color: palette.muted },
+        h3: { fontWeight: 600, marginBottom: 8, color: "#e9edf7" },
+        prose: { border: `1px solid ${palette.border}`, background: palette.card, borderRadius: 16, padding: 16, minHeight: 240 },
+        stickyMobile: { position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(11,12,15,.9)", borderTop: `1px solid ${palette.border}`, padding: 10, display: "flex", gap: 8, justifyContent: "space-between", zIndex: 20 },
+      };
+
+      const responsiveCSS = `
+        .grid-2 { display:grid; grid-template-columns: 2fr 1fr; gap:12px; }
+        .grid-2-equal { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+        .stack { display:flex; gap:8px; }
+        .title-h1 { font-size: 18px; font-weight: 600; }
+        @media (max-width: 860px) {
+          .grid-2, .grid-2-equal { grid-template-columns: 1fr; }
+          .stack { flex-direction: column; align-items: stretch; }
+          .title-h1 { font-size: 16px !important; }
+        }
+      `;
+
+      // ------- UI -------
+      return (
+        <div style={styles.app}>
+          <style>{responsiveCSS}</style>
+
+          <header style={styles.header}>
+            <div style={styles.container}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={styles.logo}>AW</div>
+                <h1 className="title-h1">글쓰기 자동화 프로그램 · 3단계 마법사</h1>
               </div>
             </div>
-            <div>
-              <label style={styles.label}>제목 생성 개수</label>
-              <input type="number" min={1} max={20} value={titleCount} onChange={(e)=>{ const v = parseInt(e.target.value||"0",10); setTitleCount(Number.isFinite(v)?v:5); }} style={styles.number} />
-            </div>
-          </div>
+          </header>
 
-          <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button onClick={() => setActiveStep(2)} style={styles.btn}>다음(2단계: 키워드/제목)</button>
-          </div>
-        </section>
-      )}
-
-      {/* STEP 2 – keyword + title generation */}
-      {activeStep === 2 && (
-        <section style={styles.card}>
-          <div style={styles.stepHead}>
-            <h2 style={{ fontSize: 16, fontWeight: 600 }}>2. 키워드 기반 제목 후보 생성</h2>
-            <span style={styles.pill}>STEP 2</span>
-          </div>
-
-          {/* 키워드 */}
-          <div style={{ marginTop: 12 }}>
-            <label style={styles.label}>키워드(쉼표 구분 허용)</label>
-            <input value={keyword} onChange={(e)=>setKeyword(e.target.value)} placeholder="예: 개인정보 보호법" style={styles.input} />
-          </div>
-
-          {/* 참고 텍스트 */}
-          <div style={{ marginTop: 12 }}>
-            <label style={styles.label}>참고할 내용 (붙여넣기, 선택)</label>
-            <textarea value={referenceText} onChange={(e)=>setReferenceText(e.target.value)} placeholder="제목에 반영하고 싶은 문단/핵심 포인트를 붙여넣으세요." style={styles.textarea} />
-          </div>
-
-          {/* 슬라이더 */}
-          <div style={{ marginTop: 12 }}>
-            <label style={styles.label}>제목 톤 (감성 ↔ 이성)</label>
-            <input
-              type="range"
-              min={1}
-              max={5}
-              step={0.5}
-              value={toneLevel}
-              onChange={(e)=>setToneLevel(parseFloat(e.target.value))}
-              style={{ width: "100%" }}
-            />
-            <div style={styles.note}>현재값: {toneLevel} (1=감성, 5=이성, 중간값 허용)</div>
-          </div>
-
-          {/* 형식 펼침 */}
-          <div style={{ marginTop: 12 }}>
-            <button onClick={()=>setFormatOpen(!formatOpen)} style={styles.btnGhost}>
-              {formatOpen ? "형식 옵션 접기" : "형식 옵션 펼치기"}
-            </button>
-            {formatOpen && (
-              <div className="grid-2-equal" style={{ marginTop: 12 }}>
-                {[
-                  { id:'auto',     name:'자동(권장)',  tip:'키워드/톤에 맞춰 자동 결정' },
-                  { id:'question', name:'질문형',      tip:'예: ~는 무엇일까?' },
-                  { id:'command',  name:'명령형',      tip:'예: 지금 알아야 할 ~' },
-                  { id:'list',     name:'리스트형',    tip:'예: ~ 3가지 핵심' },
-                  { id:'compare',  name:'비교형',      tip:'예: A vs B: 차이' },
-                ].map(opt => (
-                  <label key={opt.id} style={{ ...styles.card, padding:12, cursor:'pointer', boxShadow: titleFormat===opt.id ? `0 0 0 2px ${palette.accentPress} inset` : 'none' }}>
-                    <input type="radio" name="titleFormat" checked={titleFormat===opt.id} onChange={()=>setTitleFormat(opt.id)} style={{ marginRight:8 }} />
-                    <b>{opt.name}</b><br/><span style={styles.note}>{opt.tip}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button
-              disabled={loading || !((keyword||"").trim().length>0)}
-              onClick={onGenerateTitles}
-              style={{ ...styles.btn, opacity: (!((keyword||"").trim().length>0) || loading) ? 0.5 : 1 }}
-            >
-              {loading ? "생성 중..." : (useAI && apiKey ? "AI로 제목 생성" : "로컬 규칙으로 제목 생성")}
-            </button>
-            {error && <span style={{ color: '#fca5a5', fontSize: 12 }}>오류: {error}</span>}
-          </div>
-
-          {titleIdeas.length > 0 && (
-            <>
-              <div className="grid-2-equal" style={{ marginTop: 16 }}>
-                {titleIdeas.map((t, i) => (
-                  <label key={i} style={{ ...styles.card, padding: 12, cursor: 'pointer', boxShadow: selectedTitle===t ? `0 0 0 2px ${palette.accentPress} inset` : 'none' }}>
-                    <input type="radio" name="pickTitle" checked={selectedTitle===t} onChange={()=>setSelectedTitle(t)} style={{ marginRight: 8 }} />
-                    <span>{t}</span>
-                  </label>
-                ))}
-              </div>
-              <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button onClick={()=>setActiveStep(1)} style={styles.btnGhost}>이전(1단계)</button>
-                <button disabled={!canGoStep3} onClick={()=>setActiveStep(3)} style={{ ...styles.btn, opacity: canGoStep3 ? 1 : 0.5 }}>다음(3단계: 본문)</button>
-              </div>
-            </>
-          )}
-        </section>
-      )}
-
-      {/* STEP 3 – Body + Review */}
-      {activeStep === 3 && (
-        <section style={styles.card}>
-          <div style={styles.stepHead}>
-            <h2 style={{ fontSize: 16, fontWeight: 600 }}>3. 선택한 제목으로 본문 작성 & 검수</h2>
-            <span style={styles.pill}>STEP 3</span>
-          </div>
-
-          <div className="grid-2" style={{ alignItems: 'end' }}>
-            <div>
-              <label style={styles.label}>선택한 제목</label>
-              <input value={selectedTitle} onChange={(e)=>setSelectedTitle(e.target.value)} style={styles.input} />
-            </div>
-            <div>
-              <label style={styles.label}>본문 최소 글자수</label>
-              <input type="number" min={400} step={100} value={minChars} onChange={(e)=>{ const v = parseInt(e.target.value||'0',10); setMinChars(Number.isFinite(v)?v:1200); }} style={styles.number} />
-            </div>
-          </div>
-
-          <div style={{ marginTop: 12 }} className="stack">
-            <label style={{ ...styles.label, display: 'inline' }}>
-              <input type="checkbox" checked={autoSpacing} onChange={(e)=>setAutoSpacing(e.target.checked)} style={{ marginRight: 6 }} />
-              문장 끝 여백 자동 추가(엔터 2회)
-            </label>
-          </div>
-
-          <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button disabled={!canGoStep3} onClick={onGenerateBody} style={{ ...styles.btn, opacity: canGoStep3 ? 1 : 0.5 }}>본문 생성</button>
-            <button disabled={!markdown.trim() || reviewing} onClick={onReview} style={{ ...styles.btnGhost, opacity: (!markdown.trim() || reviewing) ? 0.5 : 1 }}>
-              {reviewing ? "검수 중..." : (useAI && apiKey ? "AI 검수(문법·흐름)" : "빠른 검수(로컬)")}
-            </button>
-            {error && <span style={{ color: '#fca5a5', fontSize: 12 }}>오류: {error}</span>}
-          </div>
-
-          <div className="grid-2-equal" style={{ marginTop: 16 }}>
-            <div>
-              <h3 style={styles.h3}>미리보기 (HTML 렌더)</h3>
-              <div style={styles.prose} dangerouslySetInnerHTML={{ __html: html }} />
-            </div>
-            <div>
-              <h3 style={styles.h3}>마크다운 원문</h3>
-              <textarea value={markdown} onChange={(e)=>setMarkdown(e.target.value)} rows={16} style={styles.textarea} />
-            </div>
-          </div>
-
-          <div style={{ marginTop: 16, display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={styles.note}>
-              * 섹션: <b style={{ color: '#e2e8f0' }}>서론</b> / <b style={{ color: '#e2e8f0' }}>본론(핵심·사례·체크리스트)</b> / <b style={{ color: '#e2e8f0' }}>결론</b> / <b style={{ color: '#e2e8f0' }}>핵심 요약</b>
-              <br/>* 네이버 호환 HTML 렌더(스크립트/외부 CSS 없음).
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={()=>setActiveStep(2)} style={styles.btnGhost}>이전(2단계)</button>
-              <button onClick={()=>window.scrollTo({ top: 0, behavior: 'smooth' })} style={styles.btnGhost}>맨 위로</button>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Sticky bottom nav for mobile */}
-      <div style={styles.stickyMobile}>
-        <button onClick={() => setActiveStep(Math.max(1, activeStep - 1))} style={styles.btnGhost}>이전</button>
-        <div style={{ display:'flex', gap:8 }}>
-          {activeStep === 2 && (
-            <button disabled={loading || !((keyword||"").trim().length>0)} onClick={onGenerateTitles} style={{ ...styles.btn, opacity: (!((keyword||"").trim().length>0) || loading) ? 0.5 : 1 }}>{loading ? '생성 중...' : '제목 생성'}</button>
-          )}
-          {activeStep === 3 && (
-            <>
-              <button disabled={!canGoStep3} onClick={onGenerateBody} style={{ ...styles.btn, opacity: canGoStep3 ? 1 : 0.5 }}>본문 생성</button>
-              <button disabled={!markdown.trim() || reviewing} onClick={onReview} style={{ ...styles.btnGhost, opacity: (!markdown.trim() || reviewing) ? 0.5 : 1 }}>
-                {reviewing ? "검수 중..." : (useAI && apiKey ? "AI 검수" : "빠른 검수")}
+          {/* Step tabs */}
+          <nav style={styles.tabs}>
+            {[1, 2, 3].map((n) => (
+              <button key={n} style={styles.tab(activeStep === n)} onClick={() => setActiveStep(n)}>
+                {n}단계
               </button>
-            </>
-          )}
-          <button onClick={() => setActiveStep(Math.min(3, activeStep + 1))} style={styles.btn}>다음</button>
-        </div>
-      </div>
+            ))}
+          </nav>
 
-      <footer style={{ maxWidth: 1120, margin: '32px auto', padding: '0 12px' }}>
-        <hr style={{ borderColor: palette.border, margin: '12px 0' }} />
-        <p style={styles.note}>모바일 가독성(큰 터치 영역/스티키 버튼/2열→1열 전환), AI 선택적 사용, 감성↔이성 슬라이더, 형식 펼침, 검수 & 자동 여백 포함.</p>
-      </footer>
-    </div>
-  );
-}
+          {/* STEP 1 – API key only */}
+          {activeStep === 1 && (
+            <section style={styles.card}>
+              <div style={styles.stepHead}>
+                <h2 style={{ fontSize: 16, fontWeight: 600 }}>1. OpenAI API 키 입력(선택)</h2>
+                <span style={styles.pill}>STEP 1</span>
+              </div>
+
+              <div className="grid-2" style={{ marginTop: 12 }}>
+                <div>
+                  <label style={styles.label}>OpenAI API 키</label>
+                  <input type="password" value={apiKey} onChange={(e)=>setApiKey(e.target.value)} placeholder="sk-..." style={styles.input} />
+                  <div style={{ marginTop: 6 }} className="stack">
+                    <label style={{ ...styles.label, display: 'inline' }}>
+                      <input type="checkbox" checked={useAI} onChange={(e)=>setUseAI(e.target.checked)} style={{ marginRight: 6 }} />
+                      AI 사용
+                    </label>
+                    <span style={styles.note}>키가 없으면 로컬 규칙으로 제목을 생성합니다.</span>
+                  </div>
+                </div>
+                <div>
+                  <label style={styles.label}>제목 생성 개수</label>
+                  <input type="number" min={1} max={20} value={titleCount} onChange={(e)=>{ const v = parseInt(e.target.value||"0",10); setTitleCount(Number.isFinite(v)?v:5); }} style={styles.number} />
+                </div>
+              </div>
+
+              <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button onClick={() => setActiveStep(2)} style={styles.btn}>다음(2단계: 키워드/제목)</button>
+              </div>
+            </section>
+          )}
+
+          {/* STEP 2 – keyword + title generation */}
+          {activeStep === 2 && (
+            <section style={styles.card}>
+              <div style={styles.stepHead}>
+                <h2 style={{ fontSize: 16, fontWeight: 600 }}>2. 키워드 기반 제목 후보 생성</h2>
+                <span style={styles.pill}>STEP 2</span>
+              </div>
+
+              {/* 키워드 */}
+              <div style={{ marginTop: 12 }}>
+                <label style={styles.label}>키워드(쉼표 구분 허용)</label>
+                <input value={keyword} onChange={(e)=>setKeyword(e.target.value)} placeholder="예: 개인정보 보호법" style={styles.input} />
+              </div>
+
+              {/* 참고 텍스트 */}
+              <div style={{ marginTop: 12 }}>
+                <label style={styles.label}>참고할 내용 (붙여넣기, 선택)</label>
+                <textarea value={referenceText} onChange={(e)=>setReferenceText(e.target.value)} placeholder="제목에 반영하고 싶은 문단/핵심 포인트를 붙여넣으세요." style={styles.textarea} />
+              </div>
+
+              {/* 슬라이더 */}
+              <div style={{ marginTop: 12 }}>
+                <label style={styles.label}>제목 톤 (감성 ↔ 이성)</label>
+                <input
+                  type="range"
+                  min={1}
+                  max={5}
+                  step={0.5}
+                  value={toneLevel}
+                  onChange={(e)=>setToneLevel(parseFloat(e.target.value))}
+                  style={{ width: "100%" }}
+                />
+                <div style={styles.note}>현재값: {toneLevel} (1=감성, 5=이성, 중간값 허용)</div>
+              </div>
+
+              {/* 형식 펼침 */}
+              <div style={{ marginTop: 12 }}>
+                <button onClick={()=>setFormatOpen(!formatOpen)} style={styles.btnGhost}>
+                  {formatOpen ? "형식 옵션 접기" : "형식 옵션 펼치기"}
+                </button>
+                {formatOpen && (
+                  <div className="grid-2-equal" style={{ marginTop: 12 }}>
+                    {[
+                      { id:'auto',     name:'자동(권장)',  tip:'키워드/톤에 맞춰 자동 결정' },
+                      { id:'question', name:'질문형',      tip:'예: ~는 무엇일까?' },
+                      { id:'command',  name:'명령형',      tip:'예: 지금 알아야 할 ~' },
+                      { id:'list',     name:'리스트형',    tip:'예: ~ 3가지 핵심' },
+                      { id:'compare',  name:'비교형',      tip:'예: A vs B: 차이' },
+                    ].map(opt => (
+                      <label key={opt.id} style={{ ...styles.card, padding:12, cursor:'pointer', boxShadow: titleFormat===opt.id ? `0 0 0 2px ${palette.accentPress} inset` : 'none' }}>
+                        <input type="radio" name="titleFormat" checked={titleFormat===opt.id} onChange={()=>setTitleFormat(opt.id)} style={{ marginRight:8 }} />
+                        <b>{opt.name}</b><br/><span style={styles.note}>{opt.tip}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  disabled={loading || !((keyword||"").trim().length>0)}
+                  onClick={onGenerateTitles}
+                  style={{ ...styles.btn, opacity: (!((keyword||"").trim().length>0) || loading) ? 0.5 : 1 }}
+                >
+                  {loading ? "생성 중..." : (useAI && apiKey ? "AI로 제목 생성" : "로컬 규칙으로 제목 생성")}
+                </button>
+                {error && <span style={{ color: '#fca5a5', fontSize: 12 }}>오류: {error}</span>}
+              </div>
+
+              {titleIdeas.length > 0 && (
+                <>
+                  <div className="grid-2-equal" style={{ marginTop: 16 }}>
+                    {titleIdeas.map((t, i) => (
+                      <label key={i} style={{ ...styles.card, padding: 12, cursor: 'pointer', boxShadow: selectedTitle===t ? `0 0 0 2px ${palette.accentPress} inset` : 'none' }}>
+                        <input type="radio" name="pickTitle" checked={selectedTitle===t} onChange={()=>setSelectedTitle(t)} style={{ marginRight: 8 }} />
+                        <span>{t}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button onClick={()=>setActiveStep(1)} style={styles.btnGhost}>이전(1단계)</button>
+                    <button disabled={!selectedTitle.trim()} onClick={()=>setActiveStep(3)} style={{ ...styles.btn, opacity: selectedTitle.trim() ? 1 : 0.5 }}>다음(3단계: 본문)</button>
+                  </div>
+                </>
+              )}
+            </section>
+          )}
+
+          {/* STEP 3 – Body + Review */}
+          {activeStep === 3 && (
+            <section style={styles.card}>
+              <div style={styles.stepHead}>
+                <h2 style={{ fontSize: 16, fontWeight: 600 }}>3. 선택한 제목으로 본문 작성 & 검수</h2>
+                <span style={styles.pill}>STEP 3</span>
+              </div>
+
+              <div className="grid-2" style={{ alignItems: 'end' }}>
+                <div>
+                  <label style={styles.label}>선택한 제목</label>
+                  <input value={selectedTitle} onChange={(e)=>setSelectedTitle(e.target.value)} style={styles.input} />
+                </div>
+                <div>
+                  <label style={styles.label}>본문 최소 글자수</label>
+                  <input type="number" min={400} step={100} value={minChars} onChange={(e)=>{ const v = parseInt(e.target.value||'0',10); setMinChars(Number.isFinite(v)?v:1200); }} style={styles.number} />
+                </div>
+              </div>
+
+              <div style={{ marginTop: 12 }} className="stack">
+                <label style={{ ...styles.label, display: 'inline' }}>
+                  <input type="checkbox" checked={autoSpacing} onChange={(e)=>setAutoSpacing(e.target.checked)} style={{ marginRight: 6 }} />
+                  문장 끝 여백 자동 추가(엔터 2회)
+                </label>
+              </div>
+
+              <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button disabled={!selectedTitle.trim()} onClick={onGenerateBody} style={{ ...styles.btn, opacity: selectedTitle.trim() ? 1 : 0.5 }}>본문 생성</button>
+                <button disabled={!markdown.trim() || reviewing} onClick={onReview} style={{ ...styles.btnGhost, opacity: (!markdown.trim() || reviewing) ? 0.5 : 1 }}>
+                  {reviewing ? "검수 중..." : (useAI && apiKey ? "AI 검수(문법·흐름)" : "빠른 검수(로컬)")}
+                </button>
+                {error && <span style={{ color: '#fca5a5', fontSize: 12 }}>오류: {error}</span>}
+              </div>
+
+              <div className="grid-2-equal" style={{ marginTop: 16 }}>
+                <div>
+                  <h3 style={styles.h3}>미리보기 (HTML 렌더)</h3>
+                  <div style={styles.prose} dangerouslySetInnerHTML={{ __html: html }} />
+                </div>
+                <div>
+                  <h3 style={styles.h3}>마크다운 원문</h3>
+                  <textarea value={markdown} onChange={(e)=>setMarkdown(e.target.value)} rows={16} style={styles.textarea} />
+                </div>
+              </div>
+
+              <div style={{ marginTop: 16, display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={styles.note}>
+                  * 섹션: <b style={{ color: '#e2e8f0' }}>서론</b> / <b style={{ color: '#e2e8f0' }}>본론(핵심·사례·체크리스트)</b> / <b style={{ color: '#e2e8f0' }}>결론</b> / <b style={{ color: '#e2e8f0' }}>핵심 요약</b>
+                  <br/>* 네이버 호환 HTML 렌더(스크립트/외부 CSS 없음).
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={()=>setActiveStep(2)} style={styles.btnGhost}>이전(2단계)</button>
+                  <button onClick={()=>window.scrollTo({ top: 0, behavior: 'smooth' })} style={styles.btnGhost}>맨 위로</button>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* Sticky bottom nav for mobile */}
+          <div style={styles.stickyMobile}>
+            <button onClick={() => setActiveStep(Math.max(1, activeStep - 1))} style={styles.btnGhost}>이전</button>
+            <div style={{ display:'flex', gap:8 }}>
+              {activeStep === 2 && (
+                <button disabled={loading || !((keyword||"").trim().length>0)} onClick={onGenerateTitles} style={{ ...styles.btn, opacity: (!((keyword||"").trim().length>0) || loading) ? 0.5 : 1 }}>{loading ? '생성 중...' : '제목 생성'}</button>
+              )}
+              {activeStep === 3 && (
+                <>
+                  <button disabled={!selectedTitle.trim()} onClick={onGenerateBody} style={{ ...styles.btn, opacity: selectedTitle.trim() ? 1 : 0.5 }}>본문 생성</button>
+                  <button disabled={!markdown.trim() || reviewing} onClick={onReview} style={{ ...styles.btnGhost, opacity: (!markdown.trim() || reviewing) ? 0.5 : 1 }}>
+                    {reviewing ? "검수 중..." : (useAI && apiKey ? "AI 검수" : "빠른 검수")}
+                  </button>
+                </>
+              )}
+              <button onClick={() => setActiveStep(Math.min(3, activeStep + 1))} style={{ ...styles.btn }}>다음</button>
+            </div>
+          </div>
+
+          <footer style={{ maxWidth: 1120, margin: '32px auto', padding: '0 12px' }}>
+            <hr style={{ borderColor: palette.border, margin: '12px 0' }} />
+            <p style={styles.note}>모바일 가독성(큰 터치 영역/스티키 버튼/2열→1열 전환), AI 선택적 사용, 감성↔이성 슬라이더, 형식 펼침, 검수 & 자동 여백 포함.</p>
+          </footer>
+        </div>
+      );
+    }
+
+    // ----- Mount -----
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<NaverWizardDark />);
+  </script>
+</body>
+</html>
