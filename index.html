@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>글쓰기 자동화 · 3단계 마법사 (Demo)</title>
+  <title>글쓰기 자동화 · 3단계 마법사 (PC-first)</title>
   <style>
     html,body,#root{height:100%;margin:0}
     body{font-family:"Noto Sans KR",system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Malgun Gothic,"맑은 고딕",Arial,sans-serif}
@@ -18,46 +18,53 @@
 <body>
   <div id="root"></div>
 
-  <!-- JSX 실행 -->
   <script type="text/babel">
-    const {useMemo,useState,useEffect} = React;
+    const {useMemo,useState,useEffect,useRef} = React;
 
     function NaverWizardDark() {
       const palette = {
         bg:"#0b0c0f", card:"#111318", border:"#1b1e25",
         text:"#e7eaf0", muted:"#9aa3b2", accent:"#a3bffa", accentPress:"#7aa2f7",
+        chip:"#0c0f14", chipActive:"#12203a", chipRing:"#3656ff66"
       };
 
-      // ------- Global State -------
+      // ------- Global -------
       const [keyword, setKeyword] = useState("");
       const [referenceText, setReferenceText] = useState("");
-      const [titleCount, setTitleCount] = useState(5); // 2단계에 배치
+      const [titleCount, setTitleCount] = useState(5);
       const [titleIdeas, setTitleIdeas] = useState([]);
       const [selectedTitle, setSelectedTitle] = useState("");
       const [minChars, setMinChars] = useState(1200);
       const [markdown, setMarkdown] = useState("");
       const [activeStep, setActiveStep] = useState(1); // 1,2,3
 
-      // ------- OpenAI (optional) -------
+      // OpenAI (optional)
       const [apiKey, setApiKey] = useState("");
       const [useAI, setUseAI] = useState(true);
       const [loading, setLoading] = useState(false);
       const [error, setError] = useState("");
 
-      // 2단계: 감성↔이성, 형식, 보조 신호들
+      // STEP2 controls (타깃/목적 제거 유지)
       const [toneLevel, setToneLevel] = useState(3);
-      const [titleFormat, setTitleFormat] = useState("auto"); // 'auto'|'question'|'command'|'list'|'compare'
+      const [titleFormat, setTitleFormat] = useState("auto");
       const [formatOpen, setFormatOpen] = useState(false);
+      const [angle, setAngle] = useState("solve");
+      const [mustInclude, setMustInclude] = useState("");
+      const [avoidTerms, setAvoidTerms] = useState("");
+      const [searchIntent, setSearchIntent] = useState("info");
 
-      // 2단계: URL 대신 실효성 높은 입력들 (정리: 타깃/목적 제거)
-      const [angle, setAngle] = useState("solve");            // 각도/후킹
-      const [mustInclude, setMustInclude] = useState("");     // 포함 단어(쉼표)
-      const [avoidTerms, setAvoidTerms] = useState("");       // 제외 단어(쉼표)
-      const [searchIntent, setSearchIntent] = useState("info"); // 검색 의도
+      // 진행 순서: 현재 포커스된 섹션 인덱스(1~8)
+      const [flowActive, setFlowActive] = useState(1);
 
-      // Review & spacing
-      const [reviewing, setReviewing] = useState(false);
-      const [autoSpacing, setAutoSpacing] = useState(true);
+      // Refs for scroll to sections
+      const ref1 = useRef(null); // 키워드
+      const ref2 = useRef(null); // 검색의도
+      const ref3 = useRef(null); // 각도
+      const ref4 = useRef(null); // 톤
+      const ref5 = useRef(null); // 형식
+      const ref6 = useRef(null); // 포함/제외어
+      const ref7 = useRef(null); // 참고내용
+      const ref8 = useRef(null); // 생성개수/버튼
 
       useEffect(() => {
         const saved = localStorage.getItem("naverWizard_openai_key") || "";
@@ -67,7 +74,7 @@
         if (apiKey !== undefined) localStorage.setItem("naverWizard_openai_key", apiKey);
       }, [apiKey]);
 
-      // ------- Markdown → HTML -------
+      // Markdown → HTML
       function mdToHtml(md) {
         let h = md || "";
         h = h.replace(/^# (.+)$/gm, "<h1>$1</h1>");
@@ -84,7 +91,7 @@
       }
       const html = useMemo(() => mdToHtml(markdown), [markdown]);
 
-      // ------- Helpers -------
+      // Helpers
       function topTerms(text, k = 5) {
         const stop = new Set(["그리고","그러나","하지만","또는","또","이미","또한","그","이","저","것","수","때문","대한","에서","으로","하기","하는","있는","없는","합니다","했다","이다","같은","등","더","좀","매우","너무","되다","하다","있다","없다"]);
         const counts = Object.create(null);
@@ -95,18 +102,10 @@
           .forEach(w => { counts[w] = (counts[w]||0)+1; });
         return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,k).map(([w])=>w);
       }
-
-      // ------- Title generators -------
       function buildContextSnippet() {
         const parts = [];
         if (angle) {
-          const angleName = {
-            "solve":"문제-해결",
-            "myth":"오해 바로잡기",
-            "check":"체크리스트",
-            "compare":"비교/대안",
-            "mistake":"실수 회피"
-          }[angle] || angle;
+          const angleName = {solve:"문제-해결", myth:"오해 바로잡기", check:"체크리스트", compare:"비교/대안", mistake:"실수 회피"}[angle] || angle;
           parts.push(`각도:${angleName}`);
         }
         if (searchIntent) {
@@ -118,55 +117,49 @@
         const ref = referenceText.trim() ? `참고:${referenceText.trim().slice(0,180)}…` : "";
         return (parts.join(" / ") + (ref ? " / " + ref : "")).trim();
       }
-
       function generateTitleIdeasLocal(baseKeyword, n, ref, opts = { toneLevel:3, format:"auto" }) {
         if (!baseKeyword || !baseKeyword.trim()) return [];
         const base = baseKeyword.trim();
         const refTerms = topTerms(ref, 4);
         const refHint = refTerms.length ? ` (${refTerms.join(" · ")})` : "";
         const ctx = buildContextSnippet();
-
         const em = opts.toneLevel ?? 3;
-        const emotional = em <= 2.0;   // 은근한 이득 암시 (사용자 선호 방식)
-        const rational  = em >= 4.0;   // 숫자/근거 강조 (사용자 선호 방식)
-
+        const emotional = em <= 2.0;
+        const rational  = em >= 4.0;
         const emoHooks = [
           `${base}의 숨은 혜택`, `${base}로 달라지는 하루`, `${base}를 알면 편해지는 이유`, `${base} 작은 비밀`
         ];
         const ratHooks = [
           `${base} 핵심 지표`, `${base} 3가지 핵심`, `${base} 실무 체크리스트`, `${base} 데이터로 보는 변화`
         ];
-
         const angleFrames = {
-          solve:   [`${base} 문제 해결 가이드`, `${base} 이렇게 하면 풀립니다`],
-          myth:    [`${base}에 대한 흔한 오해 3가지`, `${base} 사실과 오해`],
-          check:   [`${base} 점검 체크리스트`, `${base} 준비물/조건 총정리`],
-          compare: [`${base} 비교: 선택 기준과 대안`, `${base} vs 유사 개념: 차이와 활용`],
-          mistake: [`${base} 할 때 흔한 실수와 피하는 법`, `${base} 실패 줄이는 법`],
+          solve:[`${base} 문제 해결 가이드`,`${
+            base} 이렇게 하면 풀립니다`],
+          myth:[`${base}에 대한 흔한 오해 3가지`,`${base} 사실과 오해`],
+          check:[`${base} 점검 체크리스트`,`${base} 준비물/조건 총정리`],
+          compare:[`${base} 비교: 선택 기준과 대안`,`${base} vs 유사 개념: 차이와 활용`],
+          mistake:[`${base} 할 때 흔한 실수와 피하는 법`,`${base} 실패 줄이는 법`],
         }[angle] || [];
-
         const intentFrames = {
-          info:    [`${base} 핵심만 요약`, `${base} 무엇부터 알면 좋을까?`],
-          compare: [`${base} 선택 가이드`, `${base} 비교표로 보는 차이`],
-          trans:   [`왜 지금 ${base}를 고려해야 할까`, `${base} 도입 전 확인할 3가지`],
-          qa:      [`${base} Q&A: 자주 묻는 질문`, `${base} 상담전 미리 보는 핵심`],
+          info:[`${base} 핵심만 요약`,`${base} 무엇부터 알면 좋을까?`],
+          compare:[`${base} 선택 가이드`,`${base} 비교표로 보는 차이`],
+          trans:[`왜 지금 ${base}를 고려해야 할까`,`${base} 도입 전 확인할 3가지`],
+          qa:[`${base} Q&A: 자주 묻는 질문`,`${base} 상담전 미리 보는 핵심`],
         }[searchIntent] || [];
-
         const frames = [
           ...(emotional ? [
-            `${emoHooks[0]}: 알아두면 득이 되는 가이드${refHint ? refHint : ""}`,
-            `모두가 지나치는 ${base}의 ${emoHooks[3]}${refHint ? refHint : ""}`,
+            `${emoHooks[0]}: 알아두면 득이 되는 가이드${refHint || ""}`,
+            `모두가 지나치는 ${base}의 ${emoHooks[3]}${refHint || ""}`,
           ] : []),
           ...(rational ? [
-            `${ratHooks[1]}: 실전 적용 포인트${refHint ? refHint : ""}`,
-            `${base} ${ratHooks[2]} (실무 기준)${refHint ? refHint : ""}`,
+            `${ratHooks[1]}: 실전 적용 포인트${refHint || ""}`,
+            `${base} ${ratHooks[2]} (실무 기준)${refHint || ""}`,
           ] : []),
           ...angleFrames.map(f => `${f}${ctx ? " · " + ctx : ""}`),
           ...intentFrames.map(f => `${f}${ctx ? " · " + ctx : ""}`),
           `${base} 최신 트렌드와 사례: 지금 적용하는 법${refHint}`,
           `${base} 핵심만 요약: 꼭 알아야 할 체크포인트${refHint}`,
         ];
-
         function shapeByFormat(s) {
           switch (opts.format) {
             case "question": return `${base}는 무엇일까? ${refTerms[0] ? `(${refTerms[0]})` : ""}`.trim();
@@ -176,10 +169,8 @@
             default:         return s;
           }
         }
-
         const mustList = mustInclude.split(",").map(s=>s.trim()).filter(Boolean);
         const avoidList = avoidTerms.split(",").map(s=>s.trim()).filter(Boolean);
-
         const shuffled = [...frames].sort(() => Math.random() - 0.5);
         const count = Math.max(1, Number(n) || 5);
         const out = [];
@@ -211,22 +202,13 @@
 `키워드: ${baseKeyword}
 제목 개수: ${Math.max(1, Number(n)||5)}
 참고 내용(선택): ${(ref||"").slice(0, 2000)}
-제목 형식: ${opts?.format || 'auto'}  # auto|question|command|list|compare
-톤 스케일(1=감성, 5=이성, 2.5 등 중간 허용): ${opts?.toneLevel ?? 3}
-
-추가 조건:
+제목 형식: ${opts?.format || 'auto'}
+톤(1=감성,5=이성): ${opts?.toneLevel ?? 3}
 - 각도/후킹: ${({"solve":"문제-해결","myth":"오해 바로잡기","check":"체크리스트","compare":"비교/대안","mistake":"실수 회피"}[angle] || angle)}
 - 포함 단어: ${mustInclude || "없음"}
 - 제외 단어: ${avoidTerms || "없음"}
 - 검색 의도: ${({"info":"정보형","compare":"비교형","trans":"거래전환형","qa":"Q&A 요약"}[searchIntent] || searchIntent)}
-
-가이드라인:
-- 감성(1~2): 손해를 직접 언급하지 않고, '알아두면 득이 되는 작은 비밀'처럼 은근히 이득을 암시.
-- 이성(4~5): 숫자/근거/구조를 활용(예: 3가지 핵심, 데이터로 보는 ~).
-- 형식이 'auto'가 아니면 해당 형식을 우선 적용(질문/명령/리스트/비교).
-- 포함 단어는 반드시 모두 포함, 제외 단어는 사용 금지.
-- 과장/낚시 금지, 한국어 자연스러움 유지.
-- JSON만 반환: {"titles":["제목1","제목2",...]}` },
+JSON만 반환: {"titles":["..."]}` },
           ],
         };
         const resp = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -234,43 +216,29 @@
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
           body: JSON.stringify(payload),
         });
-        if (!resp.ok) {
-          const t = await resp.text();
-          throw new Error(`OpenAI 오류: ${resp.status} ${t}`);
-        }
+        if (!resp.ok) { throw new Error(`OpenAI 오류: ${resp.status} ${await resp.text()}`); }
         const data = await resp.json();
-        const content = (data?.choices?.[0]?.message?.content) || "";
-        let parsed = null;
-        try { parsed = JSON.parse(content); } catch {
-          const stripped = content.replace(/^```json\n?|```$/g, "");
-          parsed = JSON.parse(stripped);
-        }
-        const arr = (parsed && Array.isArray(parsed.titles)) ? parsed.titles : [];
+        let content = (data?.choices?.[0]?.message?.content) || "[]";
+        try { content = content.replace(/^```json\n?|\n?```$/g,""); } catch {}
+        const parsed = JSON.parse(content);
+        const arr = Array.isArray(parsed.titles) ? parsed.titles : [];
         const avoidList = avoidTerms.split(",").map(s=>s.trim()).filter(Boolean);
         const mustList = mustInclude.split(",").map(s=>s.trim()).filter(Boolean);
         const filtered = arr.filter(t => !avoidList.some(w => w && t.includes(w)))
-                            .map(t => {
-                              if (mustList.length && !mustList.every(w=>t.includes(w))) {
-                                return t + " · " + mustList.filter(w=>!t.includes(w)).join(" ");
-                              }
-                              return t;
-                            });
-        return (filtered.length ? filtered : arr).filter(Boolean).slice(0, Math.max(1, Number(n)||5));
+          .map(t => mustList.length && !mustList.every(w=>t.includes(w)) ? t + " · " + mustList.filter(w=>!t.includes(w)).join(" ") : t);
+        return (filtered.length ? filtered : arr).slice(0, Math.max(1, Number(n)||5));
       }
 
-      // ------- Body generator -------
+      // Body generator
       function generateBody({ title, keyword, minChars }) {
         const kws = (keyword || "").split(/[ ,\s]+/).filter(Boolean);
         const main = kws[0] || keyword || "키워드";
-
         const intro = [
           "## 서론",
           `${main}의 핵심을 빠르게 이해할 수 있도록 개요와 읽는 이유를 먼저 제시합니다.`,
           "본문에서는 개념 → 적용 → 체크리스트 순서로 정리합니다.",
         ].join("\n");
-
         const bullets = kws.slice(0,4).map(k => `- **${k}**: 왜 중요한지, 어디에 쓰이는지 한 줄 요약`).join("\n");
-
         const core = [
           "## 본론",
           "### 핵심 개념",
@@ -284,258 +252,218 @@
           "- 오늘 바로 적용할 수 있는 3가지 행동",
           "- 흔한 실수와 피해야 할 점",
         ].join("\n");
-
         const outro = [
           "## 결론",
           `${main}의 핵심을 다시 정리하고, 다음 행동 제안을 덧붙입니다.`,
           `- 한 문장 요약: ${main}은(는) **작게 시작하고 반복**할 때 성과가 납니다.`,
           "- 다음 단계: 체크리스트 실행 → 결과 기록 → 개선 포인트 반영",
         ].join("\n");
-
         let md = `# ${title}\n\n${intro}\n\n${core}\n\n${outro}\n\n## 핵심 요약\n- ${main} 핵심만 간단히 정리\n- 오늘 바로 적용할 3가지 행동\n- 다음 글에서 다룰 확장 주제 예고`;
         const minLen = Math.max(400, Number(minChars) || 800);
-        while (md.length < minLen) {
-          md += `\n\n> 참고: ${main}을(를) 익히려면 작은 실험을 꾸준히 반복하고 기록을 남기세요.`;
-        }
+        while (md.length < minLen) md += `\n\n> 참고: ${main}을(를) 익히려면 작은 실험을 꾸준히 반복하고 기록을 남기세요.`;
         return md;
       }
 
-      // ------- Spacing & Review -------
+      // Review
       function addDoubleBreaks(text) {
         if (!text) return text;
-        return text
-          .replace(/([.!?])( *)(?=\S)/g, "$1\n\n")
-          .replace(/\n{3,}/g, "\n\n");
+        return text.replace(/([.!?])( *)(?=\S)/g, "$1\n\n").replace(/\n{3,}/g, "\n\n");
       }
-
       function localReview(md) {
         if (!md) return md;
-        let t = md;
-        t = t.replace(/[ \t]+\n/g, "\n");
-        t = t.replace(/\n{3,}/g, "\n\n");
-        t = t.replace(/ +/g, " ");
-        return t;
+        return md.replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").replace(/ +/g," ");
       }
-
       async function reviewMarkdownAI(md) {
         if (!apiKey) throw new Error("OpenAI API 키를 먼저 입력하세요.");
-        const guide = [
-          "다음 한국어 마크다운 글을 문법과 흐름 중심으로 자연스럽게 다듬어 주세요.",
-          "- 의미/사실/키워드는 바꾸지 마세요.",
-          "- 헤딩/리스트/강조 표기는 유지.",
-          "- 출력은 순수 마크다운 본문만 반환.",
-        ].join("\n");
         const payload = {
-          model: "gpt-5",
-          temperature: 0.3,
+          model: "gpt-5", temperature: 0.3,
           messages: [
             { role: "system", content: "You are a professional Korean copy editor for blog content." },
-            { role: "user", content: `${guide}\n\n---\n\n${md}` }
+            { role: "user", content: "다음 한국어 마크다운을 문법과 흐름 위주로 자연스럽게 다듬어 주세요. 의미/사실/키워드는 유지하고, 출력은 순수 마크다운만 주세요.\n\n---\n\n"+md }
           ],
         };
         const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-          body: JSON.stringify(payload),
+          method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(payload),
         });
-        if (!resp.ok) {
-          const t = await resp.text();
-          throw new Error(`OpenAI 오류: ${resp.status} ${t}`);
-        }
+        if (!resp.ok) throw new Error(`OpenAI 오류: ${resp.status} ${await resp.text()}`);
         const data = await resp.json();
-        const content = (data?.choices?.[0]?.message?.content) || "";
-        return content.replace(/^```(?:md|markdown)?\n?|\n?```$/g, "");
+        const content = (data?.choices?.[0]?.message?.content || "").replace(/^```(?:md|markdown)?\n?|\n?```$/g, "");
+        return content;
       }
 
-      // ------- Actions -------
-      const canGoStep3 = (selectedTitle || "").trim().length > 0;
-
+      // Actions
       async function onGenerateTitles() {
         try {
           setError(""); setLoading(true);
           const opts = { toneLevel, format: titleFormat };
-          const ctx = [
-            angle && `각도:${angle}`, searchIntent && `의도:${searchIntent}`,
-            mustInclude && `포함:${mustInclude}`, avoidTerms && `제외:${avoidTerms}`
-          ].filter(Boolean).join(" / ");
+          const ctx = [angle && `각도:${angle}`, searchIntent && `의도:${searchIntent}`, mustInclude && `포함:${mustInclude}`, avoidTerms && `제외:${avoidTerms}`].filter(Boolean).join(" / ");
           const refMerged = [referenceText, ctx].filter(Boolean).join("\n\n");
-
           let ideas = [];
-          if (useAI && apiKey) {
-            ideas = await generateTitleIdeasAI({ baseKeyword: keyword, n: titleCount, ref: refMerged, opts });
-          } else {
-            ideas = generateTitleIdeasLocal(keyword, titleCount, refMerged, opts);
-          }
-          if (!ideas || ideas.length === 0) {
-            ideas = generateTitleIdeasLocal(keyword, titleCount, refMerged, opts);
-          }
-          setTitleIdeas(ideas);
-          setSelectedTitle("");
-        } catch (e) {
-          setError(e.message || String(e));
-        } finally {
-          setLoading(false);
-        }
+          if (useAI && apiKey) ideas = await generateTitleIdeasAI({ baseKeyword: keyword, n: titleCount, ref: refMerged, opts });
+          if (!ideas.length) ideas = generateTitleIdeasLocal(keyword, titleCount, refMerged, opts);
+          setTitleIdeas(ideas); setSelectedTitle("");
+        } catch (e) { setError(e.message || String(e)); }
+        finally { setLoading(false); }
       }
-
       function onGenerateBody() {
         const md0 = generateBody({ title: selectedTitle, keyword, minChars });
-        const md1 = autoSpacing ? addDoubleBreaks(md0) : md0;
-        setMarkdown(md1);
+        setMarkdown(addDoubleBreaks(md0));
       }
-
       async function onReview() {
         try {
           if (!markdown.trim()) return;
-          setError(""); setReviewing(true);
-          let reviewed = markdown;
-
-          if (useAI && apiKey) {
-            reviewed = await reviewMarkdownAI(markdown);
-          } else {
-            reviewed = localReview(markdown);
-          }
-
-          reviewed = autoSpacing ? addDoubleBreaks(reviewed) : reviewed.replace(/\n{3,}/g, "\n\n");
-          setMarkdown(reviewed);
-        } catch (e) {
-          setError(e.message || String(e));
-        } finally {
-          setReviewing(false);
-        }
+          setError(""); setLoading(true);
+          const reviewed = (useAI && apiKey) ? await reviewMarkdownAI(markdown) : localReview(markdown);
+          setMarkdown(addDoubleBreaks(reviewed));
+        } catch(e){ setError(e.message || String(e)); }
+        finally{ setLoading(false); }
       }
 
-      // ------- Styles -------
+      // Styles
       const styles = {
-        app: { backgroundColor: palette.bg, color: palette.text, minHeight: "100vh", paddingBottom: 80 },
-        header: { position: "sticky", top: 0, backdropFilter: "blur(6px)", borderBottom: `1px solid ${palette.border}`, background: "rgba(11,12,15,.65)", marginBottom: 16, zIndex: 10 },
-        container: { maxWidth: 1120, margin: "0 auto", padding: "12px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 },
-        logo: { width: 36, height: 36, borderRadius: 16, display: "grid", placeItems: "center", fontWeight: 700, background: "linear-gradient(180deg,#20314f,#101828)", color: "#dbe7ff" },
-        tabs: { display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" },
-        tab: (active) => ({ border: `1px solid ${palette.border}`, borderRadius: 12, padding: "8px 14px", background: active ? "#111827" : "#0c0f14", color: active ? palette.text : palette.muted, cursor: "pointer", flex: 1, minWidth: 90 }),
-        card: { background: palette.card, border: `1px solid ${palette.border}`, borderRadius: 16, padding: 20, marginBottom: 16 },
-        stepHead: { borderBottom: `1px solid ${palette.border}`, paddingBottom: 8, marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" },
-        pill: { padding: "2px 9px", borderRadius: 9999, fontSize: 12, background: "#0f1116", color: palette.muted, border: `1px solid ${palette.border}` },
-        label: { fontSize: 12, color: palette.muted, display: "block", marginBottom: 6 },
-        input: { background: "#0e1117", color: palette.text, border: `1px solid ${palette.border}`, borderRadius: 12, padding: "10px 12px", width: "100%" },
-        number: { background: "#0e1117", color: palette.text, border: `1px solid ${palette.border}`, borderRadius: 12, padding: "10px 12px", width: "100%" },
-        textarea: { background: "#0e1117", color: palette.text, border: `1px solid ${palette.border}`, borderRadius: 12, padding: 12, width: "100%", minHeight: 110 },
-        btn: { backgroundImage: `linear-gradient(180deg, ${palette.accent}, ${palette.accentPress})`, color: "#0b1020", fontWeight: 600, borderRadius: 14, padding: "10px 16px", border: 0, cursor: "pointer" },
-        btnGhost: { background: "transparent", color: palette.text, border: `1px solid ${palette.border}`, borderRadius: 12, padding: "9px 14px", cursor: "pointer" },
-        note: { fontSize: 12, color: palette.muted },
-        h3: { fontWeight: 600, marginBottom: 8, color: "#e9edf7" },
-        prose: { border: `1px solid ${palette.border}`, background: palette.card, borderRadius: 16, padding: 16, minHeight: 240 },
-        stickyMobile: { position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(11,12,15,.9)", borderTop: `1px solid ${palette.border}`, padding: 10, display: "flex", gap: 8, justifyContent: "space-between", zIndex: 20 },
-        flowBadge: (n,active)=>({display:'inline-flex',alignItems:'center',gap:8,border:`1px solid ${palette.border}`,borderRadius:9999,padding:'6px 10px',background:active?'#0f1420':'#0c0f14',fontSize:12,color:active?palette.text:palette.muted}),
-        hrSoft: {border:'none', borderTop:`1px dashed ${palette.border}`, margin:'12px 0'}
+        app:{ backgroundColor:palette.bg, color:palette.text, minHeight:"100vh", paddingBottom:80 },
+        header:{ position:"sticky", top:0, backdropFilter:"blur(6px)", borderBottom:`1px solid ${palette.border}`, background:"rgba(11,12,15,.65)", marginBottom:16, zIndex:10 },
+        container:{ maxWidth:1200, margin:"0 auto", padding:"12px" },
+        logo:{ width:36, height:36, borderRadius:16, display:"grid", placeItems:"center", fontWeight:700, background:"linear-gradient(180deg,#20314f,#101828)", color:"#dbe7ff" },
+        tabs:{ display:"flex", gap:8, marginBottom:12, flexWrap:"wrap" },
+        tab:(active)=>({ border:`1px solid ${palette.border}`, borderRadius:12, padding:"8px 14px", background:active?"#111827":"#0c0f14", color:active?palette.text:palette.muted, cursor:"pointer", minWidth:90 }),
+        card:{ background:palette.card, border:`1px solid ${palette.border}`, borderRadius:16, padding:20, marginBottom:16 },
+        stepHead:{ borderBottom:`1px solid ${palette.border}`, paddingBottom:8, marginBottom:12, display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, flexWrap:"wrap" },
+        pill:{ padding:"2px 9px", borderRadius:9999, fontSize:12, background:"#0f1116", color:palette.muted, border:`1px solid ${palette.border}` },
+        label:{ fontSize:12, color:palette.muted, display:"block", marginBottom:6 },
+        input:{ background:"#0e1117", color:palette.text, border:`1px solid ${palette.border}`, borderRadius:12, padding:"10px 12px", width:"100%" },
+        number:{ background:"#0e1117", color:palette.text, border:`1px solid ${palette.border}`, borderRadius:12, padding:"10px 12px", width:"100%" },
+        textarea:{ background:"#0e1117", color:palette.text, border:`1px solid ${palette.border}`, borderRadius:12, padding:12, width:"100%", minHeight:110 },
+        btn:{ backgroundImage:`linear-gradient(180deg, ${palette.accent}, ${palette.accentPress})`, color:"#0b1020", fontWeight:600, borderRadius:14, padding:"10px 16px", border:0, cursor:"pointer" },
+        btnGhost:{ background:"transparent", color:palette.text, border:`1px solid ${palette.border}`, borderRadius:12, padding:"9px 14px", cursor:"pointer" },
+        note:{ fontSize:12, color:palette.muted },
+        h3:{ fontWeight:600, marginBottom:8, color:"#e9edf7" },
+        prose:{ border:`1px solid ${palette.border}`, background:palette.card, borderRadius:16, padding:16, minHeight:240 },
+        stickyMobile:{ position:"fixed", bottom:0, left:0, right:0, background:"rgba(11,12,15,.9)", borderTop:`1px solid ${palette.border}`, padding:10, display:"flex", gap:8, justifyContent:"space-between", zIndex:20 },
+        // 진행 순서
+        flowWrap:{ border:`1px dashed ${palette.border}`, borderRadius:14, padding:"10px 12px", background:"#0b0f18" },
+        flowTitle:{ fontSize:12, color:"#b9c3d6", marginBottom:8, letterSpacing:"0.04em" },
+        chip:(active)=>({
+          display:"inline-flex", alignItems:"center", gap:8, padding:"6px 10px",
+          background: active? palette.chipActive : palette.chip, color: active? palette.text : palette.muted,
+          border:`1px solid ${active? palette.accentPress : palette.border}`, borderRadius:9999, fontSize:12, cursor:"pointer",
+          boxShadow: active? `0 0 0 2px ${palette.chipRing}` : "none", transition:"all .15s ease"
+        }),
+        // PC-first 폼 그리드 (라벨 220px 고정, 입력 1fr)
+        formGrid:{ display:"grid", gridTemplateColumns:"220px 1fr 220px 1fr", gap:"14px 16px" },
+        formRowFull:{ gridColumn:"1 / -1" },
+        hrSoft:{border:"none", borderTop:`1px dashed ${palette.border}`, margin:"12px 0"}
       };
 
       const responsiveCSS = `
-        .grid-2 { display:grid; grid-template-columns: 2fr 1fr; gap:12px; }
-        .grid-2-equal { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
-        .stack { display:flex; gap:8px; }
         .title-h1 { font-size: 18px; font-weight: 600; }
-        @media (max-width: 860px) {
-          .grid-2, .grid-2-equal { grid-template-columns: 1fr; }
-          .stack { flex-direction: column; align-items: stretch; }
+        /* 모바일에서 1열로 접힘 */
+        @media (max-width: 1024px) {
           .title-h1 { font-size: 16px !important; }
+          .form-grid { display:grid; grid-template-columns: 1fr; gap:12px; }
+          .row-full { grid-column: 1 / -1; }
         }
       `;
 
-      // ------- UI -------
+      // UI
       return (
         <div style={styles.app}>
           <style>{responsiveCSS}</style>
 
           <header style={styles.header}>
             <div style={styles.container}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:12 }}>
                 <div style={styles.logo}>AW</div>
                 <h1 className="title-h1">글쓰기 자동화 프로그램 · 3단계 마법사</h1>
               </div>
             </div>
           </header>
 
-          {/* Step tabs */}
           <nav style={styles.tabs}>
-            {[1, 2, 3].map((n) => (
-              <button key={n} style={styles.tab(activeStep === n)} onClick={() => setActiveStep(n)}>
-                {n}단계
-              </button>
+            {[1,2,3].map(n=>(
+              <button key={n} style={styles.tab(activeStep===n)} onClick={()=>setActiveStep(n)}>{n}단계</button>
             ))}
           </nav>
 
-          {/* STEP 1 – API key only */}
-          {activeStep === 1 && (
+          {/* STEP 1 */}
+          {activeStep===1 && (
             <section style={styles.card}>
               <div style={styles.stepHead}>
-                <h2 style={{ fontSize: 16, fontWeight: 600 }}>1. OpenAI API 키 입력(선택)</h2>
+                <h2 style={{ fontSize:16, fontWeight:600 }}>1. OpenAI API 키 입력(선택)</h2>
                 <span style={styles.pill}>STEP 1</span>
               </div>
-
-              <div className="grid-2" style={{ marginTop: 12 }}>
-                <div>
-                  <label style={styles.label}>OpenAI API 키</label>
-                  <input type="password" value={apiKey} onChange={(e)=>setApiKey(e.target.value)} placeholder="sk-..." style={styles.input} />
-                  <div style={{ marginTop: 6 }} className="stack">
-                    <label style={{ ...styles.label, display: 'inline' }}>
-                      <input type="checkbox" checked={useAI} onChange={(e)=>setUseAI(e.target.checked)} style={{ marginRight: 6 }} />
-                      AI 사용
-                    </label>
-                    <span style={styles.note}>키가 없으면 로컬 규칙으로 제목을 생성합니다.</span>
-                  </div>
+              <div className="form-grid" style={styles.formGrid}>
+                <label style={{...styles.label, alignSelf:"center"}}>OpenAI API 키</label>
+                <div><input type="password" value={apiKey} onChange={(e)=>setApiKey(e.target.value)} placeholder="sk-..." style={styles.input}/></div>
+                <div className="row-full" style={styles.formRowFull}>
+                  <label style={{ ...styles.label, display:'inline-flex', alignItems:'center', gap:8 }}>
+                    <input type="checkbox" checked={useAI} onChange={(e)=>setUseAI(e.target.checked)}/>
+                    AI 사용 <span style={{...styles.note, marginLeft:8}}>키가 없으면 로컬 규칙으로 제목을 생성합니다.</span>
+                  </label>
                 </div>
               </div>
-
-              <div style={{ marginTop: 16, display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                <button onClick={() => setActiveStep(2)} style={styles.btn}>다음(2단계: 키워드/제목)</button>
+              <div style={{ marginTop:16, display:"flex", gap:8, justifyContent:"flex-end" }}>
+                <button onClick={()=>setActiveStep(2)} style={styles.btn}>다음(2단계: 키워드/제목)</button>
               </div>
             </section>
           )}
 
-          {/* STEP 2 – 정돈된 흐름 (타깃/목적/지역/고통 제거) */}
-          {activeStep === 2 && (
+          {/* STEP 2 */}
+          {activeStep===2 && (
             <section style={styles.card}>
               <div style={styles.stepHead}>
-                <h2 style={{ fontSize: 16, fontWeight: 600 }}>2. 키워드 기반 제목 후보 생성</h2>
+                <h2 style={{ fontSize:16, fontWeight:600 }}>2. 키워드 기반 제목 후보 생성</h2>
                 <span style={styles.pill}>STEP 2</span>
               </div>
 
-              {/* 흐름 뱃지 */}
-              <div className="stack" style={{ flexWrap:'wrap' }}>
-                <span style={styles.flowBadge(1,true)}>① 키워드</span>
-                <span style={styles.flowBadge(2,false)}>② 검색의도</span>
-                <span style={styles.flowBadge(3,false)}>③ 각도/후킹</span>
-                <span style={styles.flowBadge(4,false)}>④ 톤(감성↔이성)</span>
-                <span style={styles.flowBadge(5,false)}>⑤ 형식(선택)</span>
-                <span style={styles.flowBadge(6,false)}>⑥ 포함/제외어</span>
-                <span style={styles.flowBadge(7,false)}>⑦ 참고내용</span>
-                <span style={styles.flowBadge(8,false)}>⑧ 생성개수 → 제목 생성</span>
+              {/* 진행 순서 */}
+              <div style={styles.flowWrap}>
+                <div style={styles.flowTitle}>진행 순서</div>
+                <div className="stack" style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                  {[
+                    {i:1, t:"① 키워드", r:ref1},
+                    {i:2, t:"② 검색의도", r:ref2},
+                    {i:3, t:"③ 각도/후킹", r:ref3},
+                    {i:4, t:"④ 톤(감성↔이성)", r:ref4},
+                    {i:5, t:"⑤ 형식(선택)", r:ref5},
+                    {i:6, t:"⑥ 포함/제외어", r:ref6},
+                    {i:7, t:"⑦ 참고내용", r:ref7},
+                    {i:8, t:"⑧ 생성개수 → 생성", r:ref8},
+                  ].map(s=>(
+                    <span key={s.i} onClick={()=>s.r.current?.scrollIntoView({behavior:"smooth", block:"center"})}
+                          style={styles.chip(flowActive===s.i)}>{s.t}</span>
+                  ))}
+                </div>
               </div>
 
-              {/* ① 키워드 */}
-              <div style={{ marginTop: 12 }}>
-                <label style={styles.label}>키워드(쉼표 구분 허용)</label>
-                <input value={keyword} onChange={(e)=>setKeyword(e.target.value)} placeholder="예: 개인정보 보호법" style={styles.input} />
-                <div style={{...styles.note, marginTop:6}}>가장 중요한 핵심 키워드를 먼저 입력하세요. 쉼표로 보조 키워드를 추가할 수 있습니다.</div>
-              </div>
+              <div style={{ height:8 }} />
 
-              <hr style={styles.hrSoft} />
-
-              {/* ② 검색 의도 / ③ 각도 & ④ 톤 */}
-              <div className="grid-2-equal" style={{ marginTop: 12 }}>
+              {/* PC-first form grid */}
+              <div className="form-grid" style={styles.formGrid}>
+                {/* ① 키워드 */}
+                <label ref={ref1} style={{...styles.label, alignSelf:"center"}}>키워드(쉼표 허용)</label>
                 <div>
-                  <label style={styles.label}>검색 의도</label>
-                  <select value={searchIntent} onChange={(e)=>setSearchIntent(e.target.value)} style={styles.input}>
+                  <input value={keyword} onFocus={()=>setFlowActive(1)}
+                         onChange={(e)=>setKeyword(e.target.value)} placeholder="예: 개인정보 보호법" style={styles.input}/>
+                  <div style={{...styles.note, marginTop:6}}>핵심 키워드를 먼저 입력하고, 쉼표로 보조 키워드를 추가하세요.</div>
+                </div>
+
+                {/* ② 검색의도 */}
+                <label ref={ref2} style={{...styles.label, alignSelf:"center"}}>검색 의도</label>
+                <div>
+                  <select value={searchIntent} onFocus={()=>setFlowActive(2)}
+                          onChange={(e)=>setSearchIntent(e.target.value)} style={styles.input}>
                     <option value="info">정보형</option>
                     <option value="compare">비교형</option>
                     <option value="trans">거래전환형</option>
                     <option value="qa">Q&A 요약</option>
                   </select>
                 </div>
+
+                {/* ③ 각도/후킹 */}
+                <label ref={ref3} style={{...styles.label, alignSelf:"center"}}>각도/후킹</label>
                 <div>
-                  <label style={styles.label}>각도/후킹</label>
-                  <select value={angle} onChange={(e)=>setAngle(e.target.value)} style={styles.input}>
+                  <select value={angle} onFocus={()=>setFlowActive(3)} onChange={(e)=>setAngle(e.target.value)} style={styles.input}>
                     <option value="solve">문제-해결</option>
                     <option value="myth">오해 바로잡기</option>
                     <option value="check">체크리스트</option>
@@ -543,132 +471,145 @@
                     <option value="mistake">실수 회피</option>
                   </select>
                 </div>
-              </div>
 
-              <div style={{ marginTop: 12 }}>
-                <label style={styles.label}>제목 톤 (감성 ↔ 이성)</label>
-                <input type="range" min={1} max={5} step={0.5} value={toneLevel} onChange={(e)=>setToneLevel(parseFloat(e.target.value))} style={{ width: "100%" }} />
-                <div style={styles.note}>현재값: {toneLevel} (1=감성, 5=이성) · 감성은 은근한 이득 암시 / 이성은 숫자·구조 강조</div>
-              </div>
-
-              {/* ⑤ 형식 (접기/펼치기) */}
-              <div style={{ marginTop: 12 }}>
-                <button onClick={()=>setFormatOpen(!formatOpen)} style={styles.btnGhost}>
-                  {formatOpen ? "형식 옵션 접기" : "형식 옵션 펼치기(선택)"}
-                </button>
-                {formatOpen && (
-                  <div className="grid-2-equal" style={{ marginTop: 12 }}>
-                    {[
-                      { id:'auto',     name:'자동(권장)',  tip:'키워드/톤/의도에 맞춰 자동 결정' },
-                      { id:'question', name:'질문형',      tip:'예: ~는 무엇일까?' },
-                      { id:'command',  name:'명령형',      tip:'예: 지금 알아야 할 ~' },
-                      { id:'list',     name:'리스트형',    tip:'예: ~ 3가지 핵심' },
-                      { id:'compare',  name:'비교형',      tip:'예: A vs B: 차이' },
-                    ].map(opt => (
-                      <label key={opt.id} style={{ ...styles.card, padding:12, cursor:'pointer', boxShadow: titleFormat===opt.id ? `0 0 0 2px ${palette.accentPress} inset` : 'none' }}>
-                        <input type="radio" name="titleFormat" checked={titleFormat===opt.id} onChange={()=>setTitleFormat(opt.id)} style={{ marginRight:8 }} />
-                        <b>{opt.name}</b><br/><span style={styles.note}>{opt.tip}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <hr style={styles.hrSoft} />
-
-              {/* ⑥ 포함/제외어 */}
-              <div className="grid-2-equal" style={{ marginTop: 12 }}>
+                {/* ④ 톤 */}
+                <label ref={ref4} style={{...styles.label, alignSelf:"center"}}>제목 톤 (감성 ↔ 이성)</label>
                 <div>
-                  <label style={styles.label}>반드시 포함할 단어(쉼표)</label>
-                  <input value={mustInclude} onChange={(e)=>setMustInclude(e.target.value)} placeholder="예: 체크리스트, 실무" style={styles.input} />
+                  <input type="range" min={1} max={5} step={0.5} value={toneLevel}
+                         onFocus={()=>setFlowActive(4)} onChange={(e)=>setToneLevel(parseFloat(e.target.value))}
+                         style={{ width:"100%" }} />
+                  <div style={styles.note}>현재값: {toneLevel} (1=감성, 5=이성)</div>
                 </div>
-                <div>
-                  <label style={styles.label}>피해야 할 단어(쉼표)</label>
-                  <input value={avoidTerms} onChange={(e)=>setAvoidTerms(e.target.value)} placeholder="예: 과장, 광고, 낚시" style={styles.input} />
-                </div>
-              </div>
 
-              {/* ⑦ 참고 내용 */}
-              <div style={{ marginTop: 12 }}>
-                <label style={styles.label}>참고할 내용 (붙여넣기, 선택)</label>
-                <textarea value={referenceText} onChange={(e)=>setReferenceText(e.target.value)} placeholder="제목에 반영하고 싶은 문단/핵심 포인트를 붙여넣으세요." style={styles.textarea} />
-                <div style={{...styles.note, marginTop:6}}>붙여넣은 텍스트의 핵심어를 추출해 제목 후킹에 반영합니다.</div>
-              </div>
-
-              {/* ⑧ 생성 개수 + 버튼 */}
-              <div className="grid-2-equal" style={{ marginTop: 12 }}>
+                {/* ⑤ 형식 */}
+                <label ref={ref5} style={{...styles.label, alignSelf:"center"}}>형식 옵션(선택)</label>
                 <div>
-                  <label style={styles.label}>제목 생성 개수</label>
-                  <input type="number" min={1} max={20} value={titleCount} onChange={(e)=>{ const v = parseInt(e.target.value||"0",10); setTitleCount(Number.isFinite(v)?v:5); }} style={styles.number} />
+                  <button onFocus={()=>setFlowActive(5)} onClick={()=>setFormatOpen(!formatOpen)} style={styles.btnGhost}>
+                    {formatOpen ? "형식 옵션 접기" : "형식 옵션 펼치기"}
+                  </button>
+                  {formatOpen && (
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(2, minmax(0,1fr))", gap:12, marginTop:12 }}>
+                      {[
+                        { id:'auto',     name:'자동(권장)',  tip:'키워드/톤/의도에 맞춰 자동 결정' },
+                        { id:'question', name:'질문형',      tip:'예: ~는 무엇일까?' },
+                        { id:'command',  name:'명령형',      tip:'예: 지금 알아야 할 ~' },
+                        { id:'list',     name:'리스트형',    tip:'예: ~ 3가지 핵심' },
+                        { id:'compare',  name:'비교형',      tip:'예: A vs B: 차이' },
+                      ].map(opt=>(
+                        <label key={opt.id}
+                               style={{ background:"#0e1117", border:`1px solid ${titleFormat===opt.id? palette.accentPress:palette.border}`,
+                                        borderRadius:12, padding:12, cursor:"pointer",
+                                        boxShadow:titleFormat===opt.id?`0 0 0 2px ${palette.chipRing}`:"none" }}>
+                          <input type="radio" name="titleFormat" checked={titleFormat===opt.id}
+                                 onChange={()=>setTitleFormat(opt.id)} style={{ marginRight:8 }}/>
+                          <b>{opt.name}</b><br/><span style={styles.note}>{opt.tip}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div style={{display:'flex', alignItems:'end', gap:8}}>
+
+                {/* ⑥ 포함/제외어 */}
+                <label ref={ref6} style={{...styles.label, alignSelf:"center"}}>반드시 포함할 단어(쉼표)</label>
+                <div>
+                  <input value={mustInclude} onFocus={()=>setFlowActive(6)}
+                         onChange={(e)=>setMustInclude(e.target.value)} placeholder="예: 체크리스트, 실무" style={styles.input}/>
+                </div>
+                <label style={{...styles.label, alignSelf:"center"}}>피해야 할 단어(쉼표)</label>
+                <div>
+                  <input value={avoidTerms} onFocus={()=>setFlowActive(6)}
+                         onChange={(e)=>setAvoidTerms(e.target.value)} placeholder="예: 과장, 광고, 낚시" style={styles.input}/>
+                </div>
+
+                {/* ⑦ 참고내용 */}
+                <label ref={ref7} style={{...styles.label, alignSelf:"start"}}>참고할 내용 (선택)</label>
+                <div className="row-full" style={styles.formRowFull}>
+                  <textarea value={referenceText} onFocus={()=>setFlowActive(7)}
+                            onChange={(e)=>setReferenceText(e.target.value)}
+                            placeholder="제목에 반영하고 싶은 문단/핵심 포인트를 붙여넣으세요." style={styles.textarea}/>
+                  <div style={{...styles.note, marginTop:6}}>붙여넣은 텍스트의 핵심어를 추출해 제목 후킹에 반영합니다.</div>
+                </div>
+
+                {/* ⑧ 생성 개수 + 버튼 */}
+                <label ref={ref8} style={{...styles.label, alignSelf:"center"}}>제목 생성 개수</label>
+                <div>
+                  <input type="number" min={1} max={20} value={titleCount}
+                         onFocus={()=>setFlowActive(8)}
+                         onChange={(e)=>{ const v=parseInt(e.target.value||"0",10); setTitleCount(Number.isFinite(v)?v:5); }} style={styles.number}/>
+                </div>
+                <div></div>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end" }}>
                   <button
                     disabled={loading || !((keyword||"").trim().length>0)}
                     onClick={onGenerateTitles}
-                    style={{ ...styles.btn, width:'100%', opacity: (!((keyword||"").trim().length>0) || loading) ? 0.5 : 1 }}
+                    style={{ ...styles.btn, opacity: (!((keyword||"").trim().length>0) || loading) ? 0.5 : 1 }}
                   >
                     {loading ? "생성 중..." : (useAI && apiKey ? "AI로 제목 생성" : "로컬 규칙으로 제목 생성")}
                   </button>
                 </div>
               </div>
-              {error && <div style={{ color: '#fca5a5', fontSize: 12, marginTop:8 }}>오류: {error}</div>}
 
-              {/* 결과 영역 */}
-              {titleIdeas.length > 0 && (
+              {error && <div style={{ color:"#fca5a5", fontSize:12, marginTop:8 }}>오류: {error}</div>}
+
+              {titleIdeas.length>0 && (
                 <>
-                  <div style={{ marginTop: 16, ...styles.note }}>생성된 제목을 선택하세요.</div>
-                  <div className="grid-2-equal" style={{ marginTop: 8 }}>
-                    {titleIdeas.map((t, i) => (
-                      <label key={i} style={{ ...styles.card, padding: 12, cursor: 'pointer', boxShadow: selectedTitle===t ? `0 0 0 2px ${palette.accentPress} inset` : 'none' }}>
-                        <input type="radio" name="pickTitle" checked={selectedTitle===t} onChange={()=>setSelectedTitle(t)} style={{ marginRight: 8 }} />
+                  <div style={{ marginTop:16, ...styles.note }}>생성된 제목을 선택하세요.</div>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(2,minmax(0,1fr))", gap:12, marginTop:8 }}>
+                    {titleIdeas.map((t,i)=>(
+                      <label key={i}
+                             style={{ background:"#0e1117", border:`1px solid ${selectedTitle===t? palette.accentPress:palette.border}`,
+                                      borderRadius:12, padding:12, cursor:"pointer",
+                                      boxShadow:selectedTitle===t?`0 0 0 2px ${palette.chipRing}`:"none" }}>
+                        <input type="radio" name="pickTitle" checked={selectedTitle===t}
+                               onChange={()=>setSelectedTitle(t)} style={{ marginRight:8 }}/>
                         <span>{t}</span>
                       </label>
                     ))}
                   </div>
-                  <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <div style={{ marginTop:16, display:"flex", gap:8, justifyContent:"flex-end" }}>
                     <button onClick={()=>setActiveStep(1)} style={styles.btnGhost}>이전(1단계)</button>
-                    <button disabled={!selectedTitle.trim()} onClick={()=>setActiveStep(3)} style={{ ...styles.btn, opacity: selectedTitle.trim() ? 1 : 0.5 }}>다음(3단계: 본문)</button>
+                    <button disabled={!selectedTitle.trim()} onClick={()=>setActiveStep(3)} style={{ ...styles.btn, opacity:selectedTitle.trim()?1:0.5 }}>
+                      다음(3단계: 본문)
+                    </button>
                   </div>
                 </>
               )}
             </section>
           )}
 
-          {/* STEP 3 – Body + Review */}
-          {activeStep === 3 && (
+          {/* STEP 3 */}
+          {activeStep===3 && (
             <section style={styles.card}>
               <div style={styles.stepHead}>
-                <h2 style={{ fontSize: 16, fontWeight: 600 }}>3. 선택한 제목으로 본문 작성 & 검수</h2>
+                <h2 style={{ fontSize:16, fontWeight:600 }}>3. 선택한 제목으로 본문 작성 & 검수</h2>
                 <span style={styles.pill}>STEP 3</span>
               </div>
 
-              <div className="grid-2" style={{ alignItems: 'end' }}>
-                <div>
-                  <label style={styles.label}>선택한 제목</label>
-                  <input value={selectedTitle} onChange={(e)=>setSelectedTitle(e.target.value)} style={styles.input} />
-                </div>
-                <div>
-                  <label style={styles.label}>본문 최소 글자수</label>
-                  <input type="number" min={400} step={100} value={minChars} onChange={(e)=>{ const v = parseInt(e.target.value||'0',10); setMinChars(Number.isFinite(v)?v:1200); }} style={styles.number} />
-                </div>
-              </div>
+              <div className="form-grid" style={styles.formGrid}>
+                <label style={{...styles.label, alignSelf:"center"}}>선택한 제목</label>
+                <div><input value={selectedTitle} onChange={(e)=>setSelectedTitle(e.target.value)} style={styles.input}/></div>
+                <label style={{...styles.label, alignSelf:"center"}}>본문 최소 글자수</label>
+                <div><input type="number" min={400} step={100} value={minChars}
+                            onChange={(e)=>{ const v=parseInt(e.target.value||'0',10); setMinChars(Number.isFinite(v)?v:1200); }}
+                            style={styles.number}/></div>
 
-              <div style={{ marginTop: 12 }} className="stack">
-                <label style={{ ...styles.label, display: 'inline' }}>
-                  <input type="checkbox" checked={autoSpacing} onChange={(e)=>setAutoSpacing(e.target.checked)} style={{ marginRight: 6 }} />
-                  문장 끝 여백 자동 추가(엔터 2회)
-                </label>
+                <div className="row-full" style={{...styles.formRowFull, display:"flex", gap:8 }}>
+                  <label style={{ ...styles.label, display:'inline-flex', alignItems:'center', gap:8 }}>
+                    <input type="checkbox" defaultChecked onChange={()=>{}}/>
+                    문장 끝 여백 자동 추가(엔터 2회)
+                  </label>
+                </div>
               </div>
 
               <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button disabled={!selectedTitle.trim()} onClick={onGenerateBody} style={{ ...styles.btn, opacity: selectedTitle.trim() ? 1 : 0.5 }}>본문 생성</button>
-                <button disabled={!markdown.trim() || reviewing} onClick={onReview} style={{ ...styles.btnGhost, opacity: (!markdown.trim() || reviewing) ? 0.5 : 1 }}>
-                  {reviewing ? "검수 중..." : (useAI && apiKey ? "AI 검수(문법·흐름)" : "빠른 검수(로컬)")}
+                <button disabled={!markdown.trim() || loading} onClick={onReview} style={{ ...styles.btnGhost, opacity: (!markdown.trim() || loading) ? 0.5 : 1 }}>
+                  {loading ? "검수 중..." : (useAI && apiKey ? "AI 검수(문법·흐름)" : "빠른 검수(로컬)")}
                 </button>
                 {error && <span style={{ color: '#fca5a5', fontSize: 12 }}>오류: {error}</span>}
               </div>
 
-              <div className="grid-2-equal" style={{ marginTop: 16 }}>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginTop:16 }}>
                 <div>
                   <h3 style={styles.h3}>미리보기 (HTML 렌더)</h3>
                   <div style={styles.prose} dangerouslySetInnerHTML={{ __html: html }} />
@@ -679,20 +620,20 @@
                 </div>
               </div>
 
-              <div style={{ marginTop: 16, display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ marginTop:16, display:"flex", gap:8, alignItems:"center", justifyContent:"space-between" }}>
                 <div style={styles.note}>
-                  * 섹션: <b style={{ color: '#e2e8f0' }}>서론</b> / <b style={{ color: '#e2e8f0' }}>본론(핵심·사례·체크리스트)</b> / <b style={{ color: '#e2e8f0' }}>결론</b> / <b style={{ color: '#e2e8f0' }}>핵심 요약</b>
-                  <br/>* 네이버 호환 HTML 렌더(스크립트/외부 CSS 없음).
+                  * 섹션: <b style={{ color: '#e2e8f0' }}>서론</b> / <b style={{ color: '#e2e8f0' }}>본론</b> / <b style={{ color: '#e2e8f0' }}>결론</b> / <b style={{ color: '#e2e8f0' }}>핵심 요약</b><br/>
+                  * 네이버 호환 HTML 렌더.
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ display:'flex', gap:8 }}>
                   <button onClick={()=>setActiveStep(2)} style={styles.btnGhost}>이전(2단계)</button>
-                  <button onClick={()=>window.scrollTo({ top: 0, behavior: 'smooth' })} style={styles.btnGhost}>맨 위로</button>
+                  <button onClick={()=>window.scrollTo({top:0,behavior:'smooth'})} style={styles.btnGhost}>맨 위로</button>
                 </div>
               </div>
             </section>
           )}
 
-          {/* Sticky bottom nav for mobile */}
+          {/* Sticky mobile bar */}
           <div style={styles.stickyMobile}>
             <button onClick={() => setActiveStep(Math.max(1, activeStep - 1))} style={styles.btnGhost}>이전</button>
             <div style={{ display:'flex', gap:8 }}>
@@ -702,8 +643,8 @@
               {activeStep === 3 && (
                 <>
                   <button disabled={!selectedTitle.trim()} onClick={onGenerateBody} style={{ ...styles.btn, opacity: selectedTitle.trim() ? 1 : 0.5 }}>본문 생성</button>
-                  <button disabled={!markdown.trim() || reviewing} onClick={onReview} style={{ ...styles.btnGhost, opacity: (!markdown.trim() || reviewing) ? 0.5 : 1 }}>
-                    {reviewing ? "검수 중..." : (useAI && apiKey ? "AI 검수" : "빠른 검수")}
+                  <button disabled={!markdown.trim() || loading} onClick={onReview} style={{ ...styles.btnGhost, opacity: (!markdown.trim() || loading) ? 0.5 : 1 }}>
+                    {loading ? "검수 중..." : (useAI && apiKey ? "AI 검수" : "빠른 검수")}
                   </button>
                 </>
               )}
@@ -711,15 +652,14 @@
             </div>
           </div>
 
-          <footer style={{ maxWidth: 1120, margin: '32px auto', padding: '0 12px' }}>
+          <footer style={{ maxWidth: 1200, margin: '32px auto', padding: '0 12px' }}>
             <hr style={{ borderColor: palette.border, margin: '12px 0' }} />
-            <p style={styles.note}>2단계 입력 흐름을 직관적으로 재배치하고, ‘대상독자·핵심베네핏·지역/범위·독자고통/문제’ 항목을 제거했습니다.</p>
+            <p style={styles.note}>PC 우선 4열 그리드(라벨 220px)로 겹침 없이 정렬되며, 모바일에서는 1열로 자연스럽게 접힙니다. “진행 순서” 칩은 포커스 시 자동 강조됩니다.</p>
           </footer>
         </div>
       );
     }
 
-    // ----- Mount -----
     const root = ReactDOM.createRoot(document.getElementById("root"));
     root.render(<NaverWizardDark />);
   </script>
