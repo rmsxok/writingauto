@@ -31,7 +31,7 @@
       // ------- Global State -------
       const [keyword, setKeyword] = useState("");
       const [referenceText, setReferenceText] = useState("");
-      const [titleCount, setTitleCount] = useState(5);       // ⬅️ 2단계로 이동
+      const [titleCount, setTitleCount] = useState(5);       // 2단계에서 설정
       const [titleIdeas, setTitleIdeas] = useState([]);
       const [selectedTitle, setSelectedTitle] = useState("");
       const [minChars, setMinChars] = useState(1200);
@@ -49,9 +49,14 @@
       const [titleFormat, setTitleFormat] = useState("auto"); // 'auto'|'question'|'command'|'list'|'compare'
       const [formatOpen, setFormatOpen] = useState(false);
 
-      // 2단계: 참고 URL
-      const [refUrl, setRefUrl] = useState("");
-      const [fetchingUrl, setFetchingUrl] = useState(false);
+      // 2단계: 제목 품질에 직접 도움이 되는 입력란
+      const [audience, setAudience] = useState("");        // 대상 독자
+      const [goal, setGoal] = useState("info");            // 글 목적
+      const [includeTerms, setIncludeTerms] = useState(""); // 반드시 포함
+      const [excludeTerms, setExcludeTerms] = useState(""); // 피해야 할
+      const [benefit, setBenefit] = useState("");          // 핵심 베네핏
+      const [painPoint, setPainPoint] = useState("");      // 독자 고통/문제
+      const [region, setRegion] = useState("");            // 지역/범위(선택)
 
       // Review & spacing
       const [reviewing, setReviewing] = useState(false);
@@ -94,38 +99,26 @@
         return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,k).map(([w])=>w);
       }
 
-      // ====== 2단계: 참고 URL 불러오기 ======
-      async function onFetchUrl() {
-        const url = (refUrl || "").trim();
-        if (!url) return;
-        try {
-          setError(""); setFetchingUrl(true);
-          const resp = await fetch(url, { mode: "cors" });
-          if (!resp.ok) throw new Error(`요청 실패: ${resp.status}`);
-          const html = await resp.text();
-          // 매우 가벼운 본문 추출(간이): title + meta + body 텍스트
-          const doc = new DOMParser().parseFromString(html, "text/html");
-          const title = doc.querySelector("title")?.textContent || "";
-          const metas = [...doc.querySelectorAll("meta[name='description'],meta[property='og:description']")]
-            .map(m=>m.getAttribute("content")).filter(Boolean).join(" ");
-          const bodyText = (doc.body?.innerText || "").replace(/\s+/g," ").trim();
-          const merged = [title, metas, bodyText].join("\n").slice(0, 6000); // 길이 제한
-          if (!merged) throw new Error("본문을 읽을 수 없습니다.");
-          setReferenceText(prev => (prev ? (prev + "\n\n" + merged) : merged));
-        } catch (e) {
-          setError("URL에서 내용을 불러오지 못했습니다. (많은 사이트가 CORS를 차단합니다) — 텍스트를 직접 붙여넣어 주세요.");
-        } finally {
-          setFetchingUrl(false);
-        }
-      }
+      function csvToArr(s){ return (s||"").split(/[,\s]+/).map(v=>v.trim()).filter(Boolean); }
 
       // ------- Title generators -------
       function generateTitleIdeasLocal(baseKeyword, n, ref, opts = { toneLevel:3, format:"auto" }) {
         if (!baseKeyword || !baseKeyword.trim()) return [];
         const base = baseKeyword.trim();
+
+        // 컨텍스트 조합
+        const ctx = [];
+        if (audience) ctx.push(`[${audience}]`);
+        if (region) ctx.push(`[${region}]`);
+        if (goal) ctx.push(`[목적:${goal}]`);
+        if (benefit) ctx.push(`이득:${benefit}`);
+        if (painPoint) ctx.push(`문제:${painPoint}`);
+
+        const must = csvToArr(includeTerms);
+        const avoid = new Set(csvToArr(excludeTerms));
+
         const refTerms = topTerms(ref, 4);
         const refHint = refTerms.length ? ` (${refTerms.join(" · ")})` : "";
-
         const em = opts.toneLevel ?? 3;
         const emotional = em <= 2.0;   // 은근한 이득 암시
         const rational  = em >= 4.0;   // 숫자/근거/구조
@@ -137,42 +130,67 @@
           `${base} 핵심 지표`, `${base} 3가지 핵심`, `${base} 실무 체크리스트`, `${base} 데이터로 보는 변화`
         ];
 
+        const goalMap = {
+          info: "핵심 가이드",
+          solve: "문제 해결법",
+          convert: "지금 적용해야 할 이유",
+          news: "최신 이슈 브리핑",
+          tutorial: "따라 하기 튜토리얼",
+        };
+        const goalPhrase = goalMap[goal] || "핵심 가이드";
+
         const frames = [
           ...(emotional ? [
-            `${emoHooks[0]}: 알아두면 득이 되는 가이드` + refHint,
+            `${emoHooks[0]}: ${goalPhrase}` + refHint,
             `모두가 지나치는 ${base}의 ${emoHooks[3]}` + refHint,
           ] : []),
           ...(rational ? [
-            `${ratHooks[1]}: 실전 적용 포인트` + refHint,
+            `${base} ${ratHooks[1]}: ${goalPhrase}` + refHint,
             `${base} ${ratHooks[2]} (실무 기준)` + refHint,
           ] : []),
-          `${base} 최신 트렌드와 사례: 지금 적용하는 법` + refHint,
+          `${base} 최신 트렌드와 사례: ${goalPhrase}` + refHint,
           `${base} Q&A: 자주 묻는 질문 총정리` + refHint,
-          `${base} 핵심만 요약: 꼭 알아야 할 체크포인트` + refHint,
+          `${base} 핵심만 요약: 체크포인트` + refHint,
         ];
 
         function shapeByFormat(s) {
           switch (opts.format) {
             case "question": return `${base}는 무엇일까? ${refTerms[0] ? `(${refTerms[0]})` : ""}`.trim();
-            case "command":  return `지금 알아야 할 ${base} 핵심 가이드`;
-            case "list":     return `${base} 핵심 포인트 3가지`;
+            case "command":  return `지금 알아야 할 ${base} ${goalPhrase}`;
+            case "list":     return `${base} ${goalPhrase} · 핵심 3가지`;
             case "compare":  return `${base} 전/후 비교: 달라진 점과 대응`;
             default:         return s;
           }
         }
 
+        const withCtx = (title) => {
+          const head = ctx.length ? `${ctx.join(" ")} ` : "";
+          // must 단어 주입(가능하면 끝에 태그로)
+          const mustTag = must.length ? ` · ${must.join(" / ")}` : "";
+          return (head + title + mustTag).trim();
+        };
+
         const shuffled = [...frames].sort(() => Math.random() - 0.5);
         const count = Math.max(1, Number(n) || 5);
         const out = [];
         const used = new Set();
-        for (let i = 0; i < count; i++) {
+        for (let i = 0; i < shuffled.length * 2 && out.length < count; i++) {
           const f = shapeByFormat(shuffled[i % shuffled.length]);
-          const title = f;
-          if (used.has(title)) continue;
-          used.add(title);
-          out.push(title);
+          let candidate = withCtx(f);
+          // avoid 단어 필터
+          const bad = [...avoid].some(w => w && candidate.includes(w));
+          if (bad) continue;
+          if (used.has(candidate)) continue;
+          used.add(candidate);
+          out.push(candidate);
         }
-        return out;
+        // 부족하면 must 단어를 섞어서 보충
+        while (out.length < count) {
+          const extra = withCtx(`${base} ${goalPhrase} 가이드`);
+          if (!used.has(extra)) { used.add(extra); out.push(extra); }
+          else break;
+        }
+        return out.slice(0, count);
       }
 
       async function generateTitleIdeasAI({ baseKeyword, n, ref, opts }) {
@@ -189,10 +207,20 @@
 제목 형식: ${opts?.format || 'auto'}  # auto|question|command|list|compare
 톤 스케일(1=감성, 5=이성, 2.5 등 중간 허용): ${opts?.toneLevel ?? 3}
 
+추가 조건:
+- 대상 독자: ${audience || '일반 독자'}
+- 글 목적: ${({info:'정보',solve:'문제해결',convert:'구매유도',news:'뉴스',tutorial:'튜토리얼'}[goal]||'정보')}
+- 지역/범위: ${region || '제한 없음'}
+- 핵심 베네핏(읽으면 얻는 이득): ${benefit || '-'}
+- 독자 고통/문제: ${painPoint || '-'}
+- 반드시 포함할 단어: ${includeTerms || '-'}
+- 피해야 할 단어: ${excludeTerms || '-'}
+
 가이드라인:
 - 감성(1~2): 손해를 직접 언급하지 않고, '알아두면 득이 되는 작은 비밀'처럼 은근히 이득을 암시.
 - 이성(4~5): 숫자/근거/구조를 활용(예: 3가지 핵심, 데이터로 보는 ~).
-- 형식이 'auto'가 아니면 해당 형식을 우선 적용(질문형/명령형/리스트형/비교형).
+- '피해야 할 단어'는 제목에 포함하지 말 것.
+- '반드시 포함할 단어'는 자연스럽게 포함.
 - 과장/스팸/낚시 금지, 한국어 자연스러움 유지.
 - JSON만 반환: {"titles":["제목1","제목2",...]}
 ` },
@@ -417,7 +445,7 @@
             ))}
           </nav>
 
-          {/* STEP 1 – API key only */}
+          {/* STEP 1 – API key only (안내 항목 삭제) */}
           {activeStep === 1 && (
             <section style={styles.card}>
               <div style={styles.stepHead}>
@@ -425,21 +453,15 @@
                 <span style={styles.pill}>STEP 1</span>
               </div>
 
-              <div className="grid-2" style={{ marginTop: 12 }}>
-                <div>
-                  <label style={styles.label}>OpenAI API 키</label>
-                  <input type="password" value={apiKey} onChange={(e)=>setApiKey(e.target.value)} placeholder="sk-..." style={styles.input} />
-                  <div style={{ marginTop: 6 }} className="stack">
-                    <label style={{ ...styles.label, display: 'inline' }}>
-                      <input type="checkbox" checked={useAI} onChange={(e)=>setUseAI(e.target.checked)} style={{ marginRight: 6 }} />
-                      AI 사용
-                    </label>
-                    <span style={styles.note}>키가 없으면 로컬 규칙으로 제목을 생성합니다.</span>
-                  </div>
-                </div>
-                <div>
-                  <label style={styles.label}>안내</label>
-                  <div style={{...styles.input, padding:"12px"}}>2단계에서 키워드·제목 수·형식·톤을 설정하고 제목을 생성합니다.</div>
+              <div style={{ marginTop: 12 }}>
+                <label style={styles.label}>OpenAI API 키</label>
+                <input type="password" value={apiKey} onChange={(e)=>setApiKey(e.target.value)} placeholder="sk-..." style={styles.input} />
+                <div style={{ marginTop: 6 }} className="stack">
+                  <label style={{ ...styles.label, display: 'inline' }}>
+                    <input type="checkbox" checked={useAI} onChange={(e)=>setUseAI(e.target.checked)} style={{ marginRight: 6 }} />
+                    AI 사용
+                  </label>
+                  <span style={styles.note}>키가 없으면 로컬 규칙으로 제목을 생성합니다.</span>
                 </div>
               </div>
 
@@ -463,22 +485,48 @@
                 <input value={keyword} onChange={(e)=>setKeyword(e.target.value)} placeholder="예: 개인정보 보호법" style={styles.input} />
               </div>
 
-              {/* 제목 생성 개수 (1단계 → 2단계로 이동됨) */}
+              {/* 제목 생성 개수 */}
               <div style={{ marginTop: 12 }}>
                 <label style={styles.label}>제목 생성 개수</label>
                 <input type="number" min={1} max={20} value={titleCount} onChange={(e)=>{ const v = parseInt(e.target.value||"0",10); setTitleCount(Number.isFinite(v)?v:5); }} style={styles.number} />
               </div>
 
-              {/* 참고 URL + 불러오기 */}
-              <div style={{ marginTop: 12 }}>
-                <label style={styles.label}>참고 URL (선택)</label>
-                <div className="stack">
-                  <input value={refUrl} onChange={(e)=>setRefUrl(e.target.value)} placeholder="https://example.com/article" style={{...styles.input, flex:1}} />
-                  <button onClick={onFetchUrl} disabled={fetchingUrl || !refUrl.trim()} style={{ ...styles.btnGhost, opacity:(fetchingUrl || !refUrl.trim())?0.5:1 }}>
-                    {fetchingUrl ? "불러오는 중..." : "불러오기"}
-                  </button>
+              {/* 제목 품질 향상 입력들 */}
+              <div className="grid-2-equal" style={{ marginTop: 12 }}>
+                <div>
+                  <label style={styles.label}>대상 독자 (예: 초보 마케터, 자영업자)</label>
+                  <input value={audience} onChange={(e)=>setAudience(e.target.value)} style={styles.input} placeholder="예: 스타트업 실무자" />
                 </div>
-                <div style={styles.note}>&middot; OpenAI는 URL을 자동으로 읽지 않습니다. 불러오기에 성공하면 본문 텍스트를 아래 “참고 내용”에 합칩니다. (CORS로 실패할 수 있음)</div>
+                <div>
+                  <label style={styles.label}>글 목적</label>
+                  <select value={goal} onChange={(e)=>setGoal(e.target.value)} style={styles.input}>
+                    <option value="info">정보 제공</option>
+                    <option value="solve">문제 해결</option>
+                    <option value="convert">구매 유도</option>
+                    <option value="news">뉴스/브리핑</option>
+                    <option value="tutorial">튜토리얼</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={styles.label}>반드시 포함할 단어 (쉼표로 구분)</label>
+                  <input value={includeTerms} onChange={(e)=>setIncludeTerms(e.target.value)} style={styles.input} placeholder="예: 체크리스트, 실무" />
+                </div>
+                <div>
+                  <label style={styles.label}>피해야 할 단어 (쉼표로 구분)</label>
+                  <input value={excludeTerms} onChange={(e)=>setExcludeTerms(e.target.value)} style={styles.input} placeholder="예: 무료, 클릭 유도" />
+                </div>
+                <div>
+                  <label style={styles.label}>핵심 베네핏 (읽으면 얻는 이득)</label>
+                  <input value={benefit} onChange={(e)=>setBenefit(e.target.value)} style={styles.input} placeholder="예: 바로 적용 가능한 체크리스트 제공" />
+                </div>
+                <div>
+                  <label style={styles.label}>독자 고통/문제</label>
+                  <input value={painPoint} onChange={(e)=>setPainPoint(e.target.value)} style={styles.input} placeholder="예: 무엇부터 해야 할지 몰라 시간 낭비" />
+                </div>
+                <div>
+                  <label style={styles.label}>지역/범위 (선택)</label>
+                  <input value={region} onChange={(e)=>setRegion(e.target.value)} style={styles.input} placeholder="예: 한국, 서울, 글로벌" />
+                </div>
               </div>
 
               {/* 참고 텍스트 */}
@@ -510,7 +558,7 @@
                 {formatOpen && (
                   <div className="grid-2-equal" style={{ marginTop: 12 }}>
                     {[
-                      { id:'auto',     name:'자동(권장)',  tip:'키워드/톤에 맞춰 자동 결정' },
+                      { id:'auto',     name:'자동(권장)',  tip:'키워드/톤/목적에 맞춰 자동 결정' },
                       { id:'question', name:'질문형',      tip:'예: ~는 무엇일까?' },
                       { id:'command',  name:'명령형',      tip:'예: 지금 알아야 할 ~' },
                       { id:'list',     name:'리스트형',    tip:'예: ~ 3가지 핵심' },
@@ -634,7 +682,7 @@
 
           <footer style={{ maxWidth: 1120, margin: '32px auto', padding: '0 12px' }}>
             <hr style={{ borderColor: palette.border, margin: '12px 0' }} />
-            <p style={styles.note}>모바일 가독성(큰 터치 영역/스티키 버튼/2열→1열 전환), AI 선택적 사용, 감성↔이성 슬라이더, 형식 펼침, 참고 URL 불러오기, 검수 & 자동 여백 포함.</p>
+            <p style={styles.note}>모바일 가독성(큰 터치 영역/스티키 버튼/2열→1열 전환), AI 선택적 사용, 감성↔이성 슬라이더, 형식 펼침, 검수 & 자동 여백 포함.</p>
           </footer>
         </div>
       );
