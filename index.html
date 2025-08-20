@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>글쓰기 자동화 · 3단계 마법사 (PC-first + 툴팁 보정 + 프롬프트)</title>
+  <title>글쓰기 자동화 · 3단계 마법사 (AI 본문 생성 + 읽기창)</title>
   <style>
     html,body,#root{height:100%;margin:0}
     body{font-family:"Noto Sans KR",system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Malgun Gothic,"맑은 고딕",Arial,sans-serif}
@@ -31,11 +31,14 @@ function NaverWizardDark(){
     chip:"#0c0f14", chipActive:"#12203a", chipRing:"#3656ff66",
     danger:"#fda4a4"
   };
+  const OPENAI_MODEL = "gpt-4o-mini"; // 안정 테스트용
 
-  const [activeStep,setActiveStep] = useState(2); // 개발 편의상 2단계로 시작
+  const [activeStep,setActiveStep] = useState(2);
+
   // step1
   const [useAI,setUseAI] = useState(false);
   const [apiKey,setApiKey] = useState("");
+
   // step2
   const [keyword,setKeyword] = useState("");
   const [searchIntent,setSearchIntent] = useState("info");
@@ -50,13 +53,19 @@ function NaverWizardDark(){
   const [titleIdeas,setTitleIdeas] = useState([]);
   const [selectedTitle,setSelectedTitle] = useState("");
   const [flowActive,setFlowActive] = useState(1);
+
   // step3
   const [minChars,setMinChars] = useState(1200);
   const [markdown,setMarkdown] = useState("");
   const [autoSpacing,setAutoSpacing] = useState(true);
   const [referencePrompt,setReferencePrompt] = useState("");
+  const [bodyMode,setBodyMode] = useState("ai"); // 'ai' | 'local'
+  const [genBusy,setGenBusy] = useState(false);
+  const [readerOpen,setReaderOpen] = useState(false);
+
   // common
   const [loading,setLoading] = useState(false);
+  const [reviewing,setReviewing] = useState(false);
   const [error,setError] = useState("");
 
   useEffect(()=>{ setApiKey(localStorage.getItem("naverWizard_openai_key")||""); },[]);
@@ -97,7 +106,7 @@ function NaverWizardDark(){
       border:`1px solid ${active? palette.accentPress : palette.border}`, borderRadius:9999, fontSize:12, cursor:"pointer",
       boxShadow: active? `0 0 0 2px ${palette.chipRing}` : "none", transition:"all .15s ease" }),
 
-    // PC-first 4열 그리드: 라벨 240px + 행 간격 20
+    // PC-first 4열 그리드
     grid:{ display:"grid", gridTemplateColumns:"240px 1fr 240px 1fr", columnGap:18, rowGap:20 },
     ctrlSpan3:{ gridColumn:"2 / -1" },
 
@@ -107,7 +116,11 @@ function NaverWizardDark(){
     btn:{ backgroundImage:`linear-gradient(180deg, ${palette.accent}, ${palette.accentPress})`, color:"#0b1020", fontWeight:600, borderRadius:14, padding:"10px 16px", border:0, cursor:"pointer" },
     btnGhost:{ background:"transparent", color:palette.text, border:`1px solid ${palette.border}`, borderRadius:12, padding:"9px 14px", cursor:"pointer" },
     note:{ fontSize:12, color:palette.muted },
-    stickyMobile:{ position:"fixed", bottom:0, left:0, right:0, background:"rgba(11,12,15,.9)", borderTop:`1px solid ${palette.border}`, padding:10, display:"flex", gap:8, justifyContent:"space-between", zIndex:20 }
+    stickyMobile:{ position:"fixed", bottom:0, left:0, right:0, background:"rgba(11,12,15,.9)", borderTop:`1px solid ${palette.border}`, padding:10, display:"flex", gap:8, justifyContent:"space-between", zIndex:20 },
+
+    // 전체 읽기창(모달)
+    overlay:{ position:"fixed", inset:0, background:"rgba(0,0,0,.6)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000 },
+    reader:{ width:"min(1000px, 92vw)", height:"min(80vh, 760px)", background:palette.card, border:`1px solid ${palette.border}`, borderRadius:16, padding:16, overflow:"auto" }
   };
 
   const responsiveCSS = `
@@ -193,7 +206,7 @@ function NaverWizardDark(){
   const html = useMemo(()=>mdToHtml(markdown),[markdown]);
 
   /* =================== (여기서부터 2/2 계속) =================== */
-  /* ===== 제목 후보 로컬 생성 ===== */
+    /* ===== 유틸 ===== */
   function topTerms(text,k=5){
     const stop=new Set(["그리고","그러나","하지만","또는","또","이미","또한","그","이","저","것","수","때문","대한","에서","으로","하기","하는","있는","없는","합니다","했다","이다","같은","등","더","좀","매우","너무","되다","하다","있다","없다"]);
     const c=Object.create(null);
@@ -201,6 +214,8 @@ function NaverWizardDark(){
       .filter(w=>w&&w.length>1&&!stop.has(w)).forEach(w=>{c[w]=(c[w]||0)+1});
     return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,k).map(([w])=>w);
   }
+
+  /* ===== 제목 생성 로컬/AI ===== */
   function buildContextSnippet(){
     const parts=[];
     const angleName={solve:"문제-해결",myth:"오해 바로잡기",check:"체크리스트",compare:"비교/대안",mistake:"실수 회피"}[angle]||angle;
@@ -275,7 +290,7 @@ function NaverWizardDark(){
   async function generateTitleIdeasAI({ baseKeyword, n, ref, opts }){
     if(!apiKey) throw new Error("OpenAI API 키를 먼저 입력하세요.");
     const payload = {
-      model: "gpt-4o-mini", 
+      model: OPENAI_MODEL,
       messages: [
         { role: "system", content: "You generate Korean blog title ideas only. Return STRICT JSON with the schema {\"titles\":[\"...\"]}." },
         { role: "user", content:
@@ -309,10 +324,11 @@ JSON만 반환: {"titles":["..."]}` },
     return (filtered.length ? filtered : arr).slice(0, Math.max(1, Number(n)||5));
   }
 
-  /* ===== 본문/검수 ===== */
+  /* ===== 본문 생성 로컬/AI & 검수 ===== */
   function addDoubleBreaks(text){ return (!text)?text : text.replace(/([.!?])( *)(?=\S)/g,"$1\n\n").replace(/\n{3,}/g,"\n\n"); }
   function localReview(md){ return (!md)?md : md.replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").replace(/ +/g," "); }
-  function generateBody({ title, keyword, minChars }){
+
+  function generateBodyLocal({ title, keyword, minChars }){
     const kws=(keyword||"").split(/[ ,\s]+/).filter(Boolean);
     const main=kws[0]||keyword||"키워드";
     const intro=["## 서론",`${main}의 핵심을 빠르게 이해할 수 있도록 개요와 읽는 이유를 먼저 제시합니다.`,"본문에서는 개념 → 적용 → 체크리스트 순서로 정리합니다."].join("\n");
@@ -324,12 +340,55 @@ JSON만 반환: {"titles":["..."]}` },
     while (md.length < minLen) md += `\n\n> 참고: ${main}을(를) 익히려면 작은 실험을 꾸준히 반복하고 기록을 남기세요.`;
     return md;
   }
+
+  async function generateBodyAI({ title, keyword, minChars, prompt, context }){
+    if(!apiKey) throw new Error("OpenAI API 키를 먼저 입력하세요.");
+    const kws=(keyword||"").split(/[ ,\s]+/).filter(Boolean).slice(0,6).join(", ");
+    const sys = "You are a professional Korean SEO/copy writer. Output clean Markdown ONLY. Avoid clickbait. Keep headings and lists tidy.";
+    const user = `
+제목: ${title}
+키워드: ${kws||keyword||"키워드"}
+최소 글자수: ${Math.max(400, Number(minChars)||800)}
+검색 의도: ${({"info":"정보형","compare":"비교형","trans":"거래전환형","qa":"Q&A 요약"}[context.intent]||context.intent)}
+각도/후킹: ${({"solve":"문제-해결","myth":"오해 바로잡기","check":"체크리스트","compare":"비교/대안","mistake":"실수 회피"}[context.angle]||context.angle)}
+톤 스케일(1=감성,5=이성): ${toneLevel}
+
+필수 포함어: ${mustInclude || "없음"}
+피해야 할 단어: ${avoidTerms || "없음"}
+참고 문단(선택): ${referenceText ? referenceText.slice(0,900) : "없음"}
+추가 프롬프트(선택): ${prompt || "없음"}
+
+작성 지침:
+- 구조: 서론 → 본론(핵심 개념 / 사례와 적용 / 체크리스트) → 결론 → 핵심 요약
+- 과장/낚시 금지, 자연스러운 한국어, 불필요한 반복 금지
+- 소제목은 '##', '###' 사용. 목록은 '-'로 정리.
+- 출력은 **순수 마크다운 본문만**.
+`.trim();
+
+    const payload = {
+      model: OPENAI_MODEL,
+      messages: [
+        { role:"system", content: sys },
+        { role:"user", content: user }
+      ],
+    };
+
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json", Authorization:`Bearer ${apiKey}` },
+      body: JSON.stringify(payload)
+    });
+    if(!resp.ok) throw new Error(`OpenAI 오류: ${resp.status} ${await resp.text()}`);
+    const data = await resp.json();
+    return (data?.choices?.[0]?.message?.content || "").replace(/^```(?:md|markdown)?\n?|\n?```$/g,"");
+  }
+
   async function onReview(){
     try{
       if(!markdown.trim()) return;
-      setError(""); setLoading(true);
+      setError(""); setReviewing(true);
       const reviewed = (useAI && apiKey) ? await (async ()=>{
-        const payload = { model:"gpt-4o-mini", messages:[
+        const payload = { model: OPENAI_MODEL, messages:[
           { role:"system", content:"You are a professional Korean copy editor for blog content." },
           { role:"user", content:"다음 한국어 마크다운을 문법과 흐름 위주로 자연스럽게 다듬어 주세요. 의미/사실/키워드는 유지하고, 출력은 순수 마크다운만 주세요.\n\n---\n\n"+markdown }
         ]};
@@ -338,11 +397,31 @@ JSON만 반환: {"titles":["..."]}` },
         const data=await resp.json();
         return (data?.choices?.[0]?.message?.content || "").replace(/^```(?:md|markdown)?\n?|\n?```$/g,"");
       })() : localReview(markdown);
-      setMarkdown(addDoubleBreaks(reviewed));
+      const out = addDoubleBreaks(reviewed);
+      setMarkdown(out);
     }catch(e){ setError(e.message||String(e)); }
-    finally{ setLoading(false); }
+    finally{ setReviewing(false); }
   }
-  function onGenerateBody(){ setMarkdown(addDoubleBreaks(generateBody({ title:selectedTitle, keyword, minChars }))); }
+
+  async function onGenerateBody(){
+    try{
+      setError(""); setGenBusy(true);
+      if (useAI && apiKey && bodyMode==="ai"){
+        const md = await generateBodyAI({
+          title: selectedTitle,
+          keyword,
+          minChars,
+          prompt: referencePrompt,
+          context: { intent: searchIntent, angle }
+        });
+        setMarkdown(autoSpacing?addDoubleBreaks(md):md);
+      } else {
+        const md = generateBodyLocal({ title:selectedTitle, keyword, minChars });
+        setMarkdown(autoSpacing?addDoubleBreaks(md):md);
+      }
+    }catch(e){ setError(e.message||String(e)); }
+    finally{ setGenBusy(false); }
+  }
 
   /* ===== 제목 생성 액션 ===== */
   async function onGenerateTitles(){
@@ -389,7 +468,7 @@ JSON만 반환: {"titles":["..."]}` },
             <span style={styles.pill}>STEP 1</span>
           </div>
           <div className="grid" style={styles.grid}>
-            <div style={styles.labelRow}><span>AI 사용</span><Help text="체크 시 OpenAI 모델 사용. 미체크 상태에서도 로컬 규칙으로 제목 생성 가능합니다."/></div>
+            <div style={styles.labelRow}><span>AI 사용</span><Help text="체크 시 OpenAI 모델 사용. 미체크 상태에서도 로컬 규칙으로 제목/본문 생성이 가능합니다."/></div>
             <div className="ctrl" style={styles.ctrlWrap}>
               <label style={{display:"inline-flex",alignItems:"center",gap:10}}>
                 <input type="checkbox" checked={useAI} onChange={(e)=>setUseAI(e.target.checked)}/>
@@ -412,7 +491,7 @@ JSON만 반환: {"titles":["..."]}` },
         </section>
       )}
 
-      {/* STEP 2 – PC-first + 진행 순서 + 툴팁 */}
+      {/* STEP 2 – PC-first + 진행 순서 + 툴팁 (생략: 기존과 동일) */}
       {activeStep===2&&(
         <section style={styles.card}>
           <div style={styles.stepHead}>
@@ -420,13 +499,16 @@ JSON만 반환: {"titles":["..."]}` },
             <span style={styles.pill}>STEP 2</span>
           </div>
 
-          {/* 진행 순서 */}
-          <div style={styles.flowWrap}>
-            <div style={styles.flowTitle}>진행 순서</div>
+          <div style={{ border:`1px dashed ${palette.border}`, borderRadius:14, padding:"10px 12px", background:"#0b0f18" }}>
+            <div style={{ fontSize:12, color:"#b9c3d6", marginBottom:8, letterSpacing:"0.04em" }}>진행 순서</div>
             <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
               {[{i:1,t:"① 키워드",r:ref1},{i:2,t:"② 검색의도",r:ref2},{i:3,t:"③ 각도/후킹",r:ref3},{i:4,t:"④ 톤",r:ref4},{i:5,t:"⑤ 형식(선택)",r:ref5},{i:6,t:"⑥ 포함/제외어",r:ref6},{i:7,t:"⑦ 참고내용",r:ref7},{i:8,t:"⑧ 생성개수 → 생성",r:ref8}]
                 .map(s=>(
-                  <span key={s.i} onClick={()=>s.r.current?.scrollIntoView({behavior:"smooth",block:"center"})} style={styles.chip(flowActive===s.i)}>{s.t}</span>
+                  <span key={s.i} onClick={()=>s.r.current?.scrollIntoView({behavior:"smooth",block:"center"})}
+                        style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"6px 10px",
+                                 background: (flowActive===s.i)? "#12203a":"#0c0f14", color:(flowActive===s.i)?palette.text:palette.muted,
+                                 border:`1px solid ${(flowActive===s.i)? palette.accentPress:palette.border}`, borderRadius:9999, fontSize:12,
+                                 boxShadow:(flowActive===s.i)?`0 0 0 2px ${palette.chipRing}`:"none", cursor:"pointer" }}>{s.t}</span>
                 ))}
             </div>
           </div>
@@ -465,7 +547,7 @@ JSON만 반환: {"titles":["..."]}` },
               <div style={styles.note}>현재값: {toneLevel} (1=감성, 5=이성)</div>
             </div>
 
-            {/* ⑤ 형식(선택) – span */}
+            {/* ⑤ 형식(선택) */}
             <div ref={ref5} style={styles.labelRow}><span>형식 옵션(선택)</span><Help text="질문형/명령형/리스트형/비교형 등 제목 포맷 선택"/></div>
             <div className="ctrl ctrl-span-3" style={{...styles.ctrlWrap, ...styles.ctrlSpan3}}>
               <button onFocus={()=>setFlowActive(5)} onClick={()=>setFormatOpen(!formatOpen)} style={styles.btnGhost}>{formatOpen?"형식 옵션 접기":"형식 옵션 펼치기"}</button>
@@ -533,7 +615,7 @@ JSON만 반환: {"titles":["..."]}` },
         </section>
       )}
 
-      {/* STEP 3 – 본문 + 프롬프트 입력 */}
+      {/* STEP 3 – 본문 + 프롬프트 + 읽기창 */}
       {activeStep===3&&(
         <section style={styles.card}>
           <div style={styles.stepHead}>
@@ -550,7 +632,13 @@ JSON만 반환: {"titles":["..."]}` },
 
             <div style={styles.labelRow}><span>참고할 글/프롬프트</span><Help text="본문 생성 시 참고할 문단·지시어·톤 요구사항 등을 붙여넣으세요."/></div>
             <div className="ctrl ctrl-span-3" style={{...styles.ctrlWrap, ...styles.ctrlSpan3}}>
-              <textarea value={referencePrompt} onChange={(e)=>setReferencePrompt(e.target.value)} placeholder="예) 톤은 중립, 실무 예시 2개 포함, 체크리스트는 3개로 제한…" style={styles.textarea}/>
+              <textarea value={referencePrompt} onChange={(e)=>setReferencePrompt(e.target.value)} placeholder="예) 톤은 중립, 실무 예시 2개, 체크리스트는 3개로 제한…" style={styles.textarea}/>
+            </div>
+
+            <div style={styles.labelRow}><span>본문 생성 방식</span><Help text="AI 사용 + API 키가 있으면 AI 본문 생성 권장. 아니면 로컬 템플릿."/></div>
+            <div className="ctrl" style={styles.ctrlWrap}>
+              <label style={{marginRight:12}}><input type="radio" name="bodymode" value="ai" checked={bodyMode==='ai'} onChange={()=>setBodyMode('ai')}/> <span style={styles.note}>AI</span></label>
+              <label><input type="radio" name="bodymode" value="local" checked={bodyMode==='local'} onChange={()=>setBodyMode('local')}/> <span style={styles.note}>로컬</span></label>
             </div>
 
             <div className="ctrl ctrl-span-3" style={{...styles.ctrlWrap, ...styles.ctrlSpan3}}>
@@ -562,10 +650,13 @@ JSON만 반환: {"titles":["..."]}` },
           </div>
 
           <div style={{ marginTop:12, display:'flex', gap:8, flexWrap:'wrap' }}>
-            <button disabled={!selectedTitle.trim()} onClick={()=>{ const md0=generateBody({ title:selectedTitle, keyword, minChars }); setMarkdown(autoSpacing?addDoubleBreaks(md0):md0); }} style={{ ...styles.btn, opacity:selectedTitle.trim()?1:0.5 }}>본문 생성</button>
-            <button disabled={!markdown.trim()||loading} onClick={onReview} style={{ ...styles.btnGhost, opacity:(!markdown.trim()||loading)?0.5:1 }}>
-              {loading?"검수 중...":(useAI&&apiKey?"AI 검수(문법·흐름)":"빠른 검수(로컬)")}
+            <button disabled={!selectedTitle.trim()||genBusy} onClick={onGenerateBody} style={{ ...styles.btn, opacity:(!selectedTitle.trim()||genBusy)?0.5:1 }}>
+              {genBusy ? "본문 생성 중..." : (useAI && apiKey && bodyMode==="ai" ? "AI로 본문 생성" : "본문 생성(로컬)")}
             </button>
+            <button disabled={!markdown.trim()||reviewing} onClick={onReview} style={{ ...styles.btnGhost, opacity:(!markdown.trim()||reviewing)?0.5:1 }}>
+              {reviewing?"검수 중...":(useAI&&apiKey?"AI 검수(문법·흐름)":"빠른 검수(로컬)")}
+            </button>
+            <button disabled={!markdown.trim()} onClick={()=>setReaderOpen(true)} style={{ ...styles.btnGhost, opacity:(!markdown.trim())?0.5:1 }}>본문 전체 보기</button>
             {error && <span style={{ color: palette.danger, fontSize:12 }}>오류: {error}</span>}
           </div>
 
@@ -581,13 +672,26 @@ JSON만 반환: {"titles":["..."]}` },
           </div>
 
           <div style={{ marginTop:16, display:"flex", gap:8, alignItems:"center", justifyContent:"space-between" }}>
-            <div style={styles.note}>* PC 우선 4열 그리드(라벨 240px, 행 간격 20px)로 겹침 없이 정렬됩니다.</div>
+            <div style={styles.note}>* AI 본문 생성은 모델: {OPENAI_MODEL} (temperature 미사용). 캐시 새로고침으로 반영 확인.</div>
             <div style={{ display:'flex', gap:8 }}>
               <button onClick={()=>setActiveStep(2)} style={styles.btnGhost}>이전(2단계)</button>
               <button onClick={()=>window.scrollTo({top:0,behavior:'smooth'})} style={styles.btnGhost}>맨 위로</button>
             </div>
           </div>
         </section>
+      )}
+
+      {/* 전체 읽기창(모달) */}
+      {readerOpen && (
+        <div style={styles.overlay} onClick={()=>setReaderOpen(false)}>
+          <div style={styles.reader} onClick={(e)=>e.stopPropagation()}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+              <strong>본문 전체 보기</strong>
+              <button style={styles.btnGhost} onClick={()=>setReaderOpen(false)}>닫기</button>
+            </div>
+            <div dangerouslySetInnerHTML={{ __html: html }} />
+          </div>
+        </div>
       )}
 
       {/* 하단 고정 바 */}
@@ -601,8 +705,10 @@ JSON만 반환: {"titles":["..."]}` },
           )}
           {activeStep===3&&(
             <>
-              <button disabled={!selectedTitle.trim()} onClick={()=>{ const md0=generateBody({ title:selectedTitle, keyword, minChars }); setMarkdown(autoSpacing?addDoubleBreaks(md0):md0); }} style={{ ...styles.btn, opacity:selectedTitle.trim()?1:0.5 }}>본문 생성</button>
-              <button disabled={!markdown.trim()||loading} onClick={onReview} style={{ ...styles.btnGhost, opacity:(!markdown.trim()||loading)?0.5:1 }}>{loading?"검수 중...":(useAI&&apiKey?"AI 검수":"빠른 검수")}</button>
+              <button disabled={!selectedTitle.trim()||genBusy} onClick={onGenerateBody} style={{ ...styles.btn, opacity:(!selectedTitle.trim()||genBusy)?0.5:1 }}>
+                {genBusy ? "본문 생성 중..." : (useAI && apiKey && bodyMode==="ai" ? "AI 본문" : "본문(로컬)")}
+              </button>
+              <button disabled={!markdown.trim()||reviewing} onClick={onReview} style={{ ...styles.btnGhost, opacity:(!markdown.trim()||reviewing)?0.5:1 }}>{reviewing?"검수 중...":(useAI&&apiKey?"AI 검수":"빠른 검수")}</button>
             </>
           )}
           <button onClick={()=>setActiveStep(Math.min(3,activeStep+1))} style={styles.btn}>다음</button>
