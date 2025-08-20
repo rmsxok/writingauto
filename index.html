@@ -3,692 +3,485 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>글쓰기 자동화 · 3단계 마법사 (PC-first + Help + API 토글)</title>
+  <title>글쓰기 자동화 · 3단계 마법사 (툴팁 보정 + 정렬 + 프롬프트)</title>
   <style>
     html,body,#root{height:100%;margin:0}
     body{font-family:"Noto Sans KR",system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Malgun Gothic,"맑은 고딕",Arial,sans-serif}
     ::-webkit-scrollbar{height:10px;width:10px}
     ::-webkit-scrollbar-thumb{background:#1f2430;border-radius:8px}
   </style>
-  <!-- React / ReactDOM / Babel (개발용 CDN) -->
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin></script>
 </head>
 <body>
-  <div id="root"></div>
+<div id="root"></div>
 
-  <script type="text/babel">
-    const {useMemo,useState,useEffect,useRef} = React;
+<script type="text/babel">
+const {useMemo,useState,useEffect,useRef,useLayoutEffect} = React;
 
-    function NaverWizardDark() {
-      const palette = {
-        bg:"#0b0c0f", card:"#111318", border:"#1b1e25",
-        text:"#e7eaf0", muted:"#9aa3b2",
-        accent:"#a3bffa", accentPress:"#7aa2f7",
-        chip:"#0c0f14", chipActive:"#12203a", chipRing:"#3656ff66",
-        danger:"#fda4a4"
+function NaverWizardDark() {
+  const palette = {
+    bg:"#0b0c0f", card:"#111318", border:"#1b1e25",
+    text:"#e7eaf0", muted:"#9aa3b2",
+    accent:"#a3bffa", accentPress:"#7aa2f7",
+    chip:"#0c0f14", chipActive:"#12203a", chipRing:"#3656ff66",
+    danger:"#fda4a4"
+  };
+
+  // ===== Global =====
+  const [activeStep, setActiveStep] = useState(2); // 바로 2단계 보던 흐름 유지
+  const [keyword, setKeyword] = useState("");
+  const [referenceText, setReferenceText] = useState("");
+  const [titleCount, setTitleCount] = useState(5);
+  const [titleIdeas, setTitleIdeas] = useState([]);
+  const [selectedTitle, setSelectedTitle] = useState("");
+  const [markdown, setMarkdown] = useState("");
+  const [minChars, setMinChars] = useState(1200);
+  const [referencePrompt, setReferencePrompt] = useState(""); // 3단계: 참고할 글/프롬프트
+
+  // OpenAI (선택)
+  const [useAI, setUseAI] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(()=>{ setApiKey(localStorage.getItem("naverWizard_openai_key")||""); },[]);
+  useEffect(()=>{ localStorage.setItem("naverWizard_openai_key", apiKey||""); },[apiKey]);
+
+  // STEP2 상태
+  const [searchIntent, setSearchIntent] = useState("info");
+  const [angle, setAngle] = useState("solve");
+  const [toneLevel, setToneLevel] = useState(3);
+  const [titleFormat, setTitleFormat] = useState("auto");
+  const [formatOpen, setFormatOpen] = useState(false);
+  const [mustInclude, setMustInclude] = useState("");
+  const [avoidTerms, setAvoidTerms] = useState("");
+  const [flowActive, setFlowActive] = useState(1);
+
+  // refs(스무스 스크롤)
+  const ref1=useRef(null),ref2=useRef(null),ref3=useRef(null),ref4=useRef(null);
+  const ref5=useRef(null),ref6=useRef(null),ref7=useRef(null),ref8=useRef(null);
+
+  // ===== 스타일 =====
+  const styles = {
+    app:{ backgroundColor:palette.bg, color:palette.text, minHeight:"100vh", paddingBottom:88 },
+    header:{ position:"sticky", top:0, backdropFilter:"blur(6px)", borderBottom:`1px solid ${palette.border}`, background:"rgba(11,12,15,.65)", marginBottom:16, zIndex:10 },
+    container:{ maxWidth:1200, margin:"0 auto", padding:"12px" },
+    logo:{ width:36, height:36, borderRadius:16, display:"grid", placeItems:"center", fontWeight:700, background:"linear-gradient(180deg,#20314f,#101828)", color:"#dbe7ff" },
+    tabs:{ display:"flex", gap:8, marginBottom:12, flexWrap:"wrap" },
+    tab:(active)=>({ border:`1px solid ${palette.border}`, borderRadius:12, padding:"8px 14px", background:active?"#111827":"#0c0f14", color:active?palette.text:palette.muted, cursor:"pointer", minWidth:90 }),
+    card:{ background:palette.card, border:`1px solid ${palette.border}`, borderRadius:16, padding:20, marginBottom:16 },
+    stepHead:{ borderBottom:`1px solid ${palette.border}`, paddingBottom:8, marginBottom:12, display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, flexWrap:"wrap" },
+    pill:{ padding:"2px 9px", borderRadius:9999, fontSize:12, background:"#0f1116", color:palette.muted, border:`1px solid ${palette.border}` },
+
+    // 라벨 + ? 툴팁
+    labelRow:{ display:"flex", alignItems:"flex-start", gap:8, color:palette.muted, fontSize:12, paddingTop:6, lineHeight:1.3, minHeight:38 },
+    helpWrap:{ position:"relative", display:"inline-flex", alignItems:"center", justifyContent:"center",
+               width:18, height:18, borderRadius:"50%", background:"#0e1524", color:"#cfe0ff",
+               border:`1px solid ${palette.border}`, cursor:"pointer", fontWeight:700, fontSize:12, userSelect:"none", flex:"0 0 auto" },
+    tooltipBox:{ position:"fixed", background:"#0e1117", color:palette.text, border:`1px solid ${palette.border}`,
+                 borderRadius:8, padding:"8px 10px", maxWidth:320, zIndex:1000, boxShadow:"0 10px 22px rgba(0,0,0,.45)", fontSize:12 },
+
+    // 입력 컨트롤
+    ctrlWrap:{ paddingTop:2 }, // 라벨과 약간 여백
+    input:{ background:"#0e1117", color:palette.text, border:`1px solid ${palette.border}`, borderRadius:12, padding:"10px 12px", width:"100%" },
+    number:{ background:"#0e1117", color:palette.text, border:`1px solid ${palette.border}`, borderRadius:12, padding:"10px 12px", width:"100%" },
+    textarea:{ background:"#0e1117", color:palette.text, border:`1px solid ${palette.border}`, borderRadius:12, padding:12, width:"100%", minHeight:110 },
+    ring:(active)=> active ? { borderColor:palette.accentPress, boxShadow:`0 0 0 2px ${palette.chipRing}` } : {},
+    btn:{ backgroundImage:`linear-gradient(180deg, ${palette.accent}, ${palette.accentPress})`, color:"#0b1020", fontWeight:600, borderRadius:14, padding:"10px 16px", border:0, cursor:"pointer" },
+    btnGhost:{ background:"transparent", color:palette.text, border:`1px solid ${palette.border}`, borderRadius:12, padding:"9px 14px", cursor:"pointer" },
+    note:{ fontSize:12, color:palette.muted },
+    h3:{ fontWeight:600, marginBottom:8, color:"#e9edf7" },
+    prose:{ border:`1px solid ${palette.border}`, background:palette.card, borderRadius:16, padding:16, minHeight:240 },
+    stickyMobile:{ position:"fixed", bottom:0, left:0, right:0, background:"rgba(11,12,15,.9)", borderTop:`1px solid ${palette.border}`, padding:10, display:"flex", gap:8, justifyContent:"space-between", zIndex:20 },
+
+    // 진행 순서
+    flowWrap:{ border:`1px dashed ${palette.border}`, borderRadius:14, padding:"10px 12px", background:"#0b0f18" },
+    flowTitle:{ fontSize:12, color:"#b9c3d6", marginBottom:8, letterSpacing:"0.04em" },
+    chip:(active)=>({
+      display:"inline-flex", alignItems:"center", gap:8, padding:"6px 10px",
+      background: active? palette.chipActive : palette.chip, color: active? palette.text : palette.muted,
+      border:`1px solid ${active? palette.accentPress : palette.border}`, borderRadius:9999, fontSize:12, cursor:"pointer",
+      boxShadow: active? `0 0 0 2px ${palette.chipRing}` : "none", transition:"all .15s ease"
+    }),
+
+    // PC-first grid : 라벨 240px / 행간 20px
+    grid:{ display:"grid", gridTemplateColumns:"240px 1fr 240px 1fr", columnGap:18, rowGap:20 },
+    ctrlSpan3:{ gridColumn:"2 / -1" }
+  };
+
+  const responsiveCSS = `
+    .title-h1 { font-size: 18px; font-weight: 600; }
+    @media (max-width: 1024px) {
+      .title-h1 { font-size: 16px !important; }
+      .grid { display:grid; grid-template-columns: 1fr; gap:14px; }
+      .ctrl-span-3 { grid-column: 1 / -1 !important; }
+    }
+  `;
+
+  // ===== 툴팁 컴포넌트(뷰포트 안전 위치 계산) =====
+  function Help({text}) {
+    const btnRef = useRef(null);
+    const tipRef = useRef(null);
+    const [open, setOpen] = useState(false);
+    const [pos, setPos] = useState({top:0,left:0,placement:"bottom"});
+
+    const placeTooltip = () => {
+      if (!btnRef.current) return;
+      const r = btnRef.current.getBoundingClientRect();
+      // 임시 폭/높이(초기 추정)
+      const estW = Math.min(320, Math.max(220, window.innerWidth*0.3));
+      const estH = 120;
+      let left = r.left + r.width/2 - estW/2;
+      left = Math.max(8, Math.min(left, window.innerWidth - estW - 8));
+      let top = r.bottom + 8;
+      let placement = "bottom";
+      // 아래 공간 부족하면 위로
+      if (top + estH > window.innerHeight - 8) {
+        top = r.top - estH - 8;
+        placement = "top";
+        if (top < 8) top = 8; // 최종 안전보정
+      }
+      setPos({top,left,placement});
+      // 실제 크기 측정 후 미세조정
+      setTimeout(()=>{
+        if (!tipRef.current) return;
+        const tr = tipRef.current.getBoundingClientRect();
+        let l = tr.left, t = tr.top;
+        if (tr.right > window.innerWidth - 8) l -= (tr.right - (window.innerWidth - 8));
+        if (tr.left < 8) l = 8;
+        if (tr.bottom > window.innerHeight - 8 && pos.placement==="bottom") t -= (tr.bottom - (window.innerHeight - 8));
+        if (tr.top < 8 && pos.placement==="top") t = 8;
+        tipRef.current.style.left = `${l}px`;
+        tipRef.current.style.top = `${t}px`;
+      },0);
+    };
+
+    useLayoutEffect(()=>{ if(open) placeTooltip(); },[open]);
+
+    useEffect(()=>{
+      const onScrollOrResize = () => open && placeTooltip();
+      window.addEventListener('scroll', onScrollOrResize, true);
+      window.addEventListener('resize', onScrollOrResize);
+      return () => {
+        window.removeEventListener('scroll', onScrollOrResize, true);
+        window.removeEventListener('resize', onScrollOrResize);
       };
+    },[open]);
 
-      // ===== Global =====
-      const [activeStep, setActiveStep] = useState(1); // 1,2,3
-      const [keyword, setKeyword] = useState("");
-      const [referenceText, setReferenceText] = useState("");
-      const [titleCount, setTitleCount] = useState(5);
-      const [titleIdeas, setTitleIdeas] = useState([]);
-      const [selectedTitle, setSelectedTitle] = useState("");
-      const [markdown, setMarkdown] = useState("");
-      const [minChars, setMinChars] = useState(1200);
+    return (
+      <>
+        <span
+          ref={btnRef}
+          style={styles.helpWrap}
+          onMouseEnter={()=>{setOpen(true);}}
+          onMouseLeave={()=>{setOpen(false);}}
+          onClick={()=>{setOpen(o=>!o);}}         /* PC 클릭 토글 */
+          onTouchStart={(e)=>{e.preventDefault(); setOpen(o=>!o);}} /* 모바일 터치 토글 */
+          aria-label="도움말"
+        >?</span>
+        {open && (
+          <div ref={tipRef} style={{...styles.tooltipBox, top:pos.top, left:pos.left}}>
+            {text}
+          </div>
+        )}
+      </>
+    );
+  }
+  // ===== Markdown 변환 =====
+  function mdToHtml(md){
+    let h = md || "";
+    h = h.replace(/^# (.+)$/gm, "<h1>$1</h1>");
+    h = h.replace(/^## (.+)$/gm, "<h2>$1</h2>");
+    h = h.replace(/^### (.+)$/gm, "<h3>$1</h3>");
+    h = h.replace(/^> (.+)$/gm, "<blockquote>$1</blockquote>");
+    h = h.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    h = h.replace(/\*(.+?)\*/g, "<em>$1</em>");
+    h = h.replace(/`([^`]+)`/g, "<code>$1</code>");
+    h = h.replace(/^\s*[-*]\s+(.+)$/gm, "<li>$1</li>");
+    h = h.replace(/(<li>.*<\/li>\n?)+/g, (m) => "<ul>" + m + "</ul>");
+    h = h.replace(/\n\n+/g, "<br/><br/>");
+    return h;
+  }
+  const html = useMemo(()=>mdToHtml(markdown),[markdown]);
 
-      // OpenAI (선택)
-      const [useAI, setUseAI] = useState(false);   // ← 기본 off, 체크 시 API 입력칸 표시
-      const [apiKey, setApiKey] = useState("");
-      const [loading, setLoading] = useState(false);
-      const [error, setError] = useState("");
-
-      useEffect(() => {
-        const saved = localStorage.getItem("naverWizard_openai_key") || "";
-        setApiKey(saved);
-      }, []);
-      useEffect(() => {
-        localStorage.setItem("naverWizard_openai_key", apiKey || "");
-      }, [apiKey]);
-
-      // STEP2 상태 (타깃/목적 제거 유지)
-      const [searchIntent, setSearchIntent] = useState("info");
-      const [angle, setAngle] = useState("solve");
-      const [toneLevel, setToneLevel] = useState(3);
-      const [titleFormat, setTitleFormat] = useState("auto");
-      const [formatOpen, setFormatOpen] = useState(false);
-      const [mustInclude, setMustInclude] = useState("");
-      const [avoidTerms, setAvoidTerms] = useState("");
-
-      // 진행 순서 포커스(1~8)
-      const [flowActive, setFlowActive] = useState(1);
-
-      // refs(스무스 스크롤)
-      const ref1 = useRef(null), ref2 = useRef(null), ref3 = useRef(null), ref4 = useRef(null);
-      const ref5 = useRef(null), ref6 = useRef(null), ref7 = useRef(null), ref8 = useRef(null);
-
-      // ===== 스타일 공통 =====
-      const styles = {
-        app:{ backgroundColor:palette.bg, color:palette.text, minHeight:"100vh", paddingBottom:80 },
-        header:{ position:"sticky", top:0, backdropFilter:"blur(6px)", borderBottom:`1px solid ${palette.border}`, background:"rgba(11,12,15,.65)", marginBottom:16, zIndex:10 },
-        container:{ maxWidth:1200, margin:"0 auto", padding:"12px" },
-        logo:{ width:36, height:36, borderRadius:16, display:"grid", placeItems:"center", fontWeight:700, background:"linear-gradient(180deg,#20314f,#101828)", color:"#dbe7ff" },
-        tabs:{ display:"flex", gap:8, marginBottom:12, flexWrap:"wrap" },
-        tab:(active)=>({ border:`1px solid ${palette.border}`, borderRadius:12, padding:"8px 14px", background:active?"#111827":"#0c0f14", color:active?palette.text:palette.muted, cursor:"pointer", minWidth:90 }),
-        card:{ background:palette.card, border:`1px solid ${palette.border}`, borderRadius:16, padding:20, marginBottom:16 },
-        stepHead:{ borderBottom:`1px solid ${palette.border}`, paddingBottom:8, marginBottom:12, display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, flexWrap:"wrap" },
-        pill:{ padding:"2px 9px", borderRadius:9999, fontSize:12, background:"#0f1116", color:palette.muted, border:`1px solid ${palette.border}` },
-
-        // 라벨+? 도구
-        labelRow:{ display:"flex", alignItems:"center", gap:8, color:palette.muted, fontSize:12 },
-        helpWrap:{ position:"relative", display:"inline-flex", alignItems:"center", justifyContent:"center",
-                   width:18, height:18, borderRadius:"50%", background:"#0e1524", color:"#cfe0ff",
-                   border:`1px solid ${palette.border}`, cursor:"pointer", fontWeight:700, fontSize:12, userSelect:"none" },
-        tooltip:{ position:"absolute", top:"125%", left:"50%", transform:"translateX(-50%)",
-                  background:"#0e1117", color:palette.text, border:`1px solid ${palette.border}`,
-                  borderRadius:8, padding:"8px 10px", width:260, fontSize:12, zIndex:30, boxShadow:`0 10px 20px rgba(0,0,0,.35)` },
-
-        // 입력 공통 + 포커스 링
-        input:{ background:"#0e1117", color:palette.text, border:`1px solid ${palette.border}`, borderRadius:12, padding:"10px 12px", width:"100%" },
-        number:{ background:"#0e1117", color:palette.text, border:`1px solid ${palette.border}`, borderRadius:12, padding:"10px 12px", width:"100%" },
-        textarea:{ background:"#0e1117", color:palette.text, border:`1px solid ${palette.border}`, borderRadius:12, padding:12, width:"100%", minHeight:110 },
-
-        ring:(active)=> active ? { borderColor:palette.accentPress, boxShadow:`0 0 0 2px ${palette.chipRing}` } : {},
-
-        btn:{ backgroundImage:`linear-gradient(180deg, ${palette.accent}, ${palette.accentPress})`, color:"#0b1020", fontWeight:600, borderRadius:14, padding:"10px 16px", border:0, cursor:"pointer" },
-        btnGhost:{ background:"transparent", color:palette.text, border:`1px solid ${palette.border}`, borderRadius:12, padding:"9px 14px", cursor:"pointer" },
-        note:{ fontSize:12, color:palette.muted },
-        h3:{ fontWeight:600, marginBottom:8, color:"#e9edf7" },
-        prose:{ border:`1px solid ${palette.border}`, background:palette.card, borderRadius:16, padding:16, minHeight:240 },
-        stickyMobile:{ position:"fixed", bottom:0, left:0, right:0, background:"rgba(11,12,15,.9)", borderTop:`1px solid ${palette.border}`, padding:10, display:"flex", gap:8, justifyContent:"space-between", zIndex:20 },
-
-        // 진행 순서
-        flowWrap:{ border:`1px dashed ${palette.border}`, borderRadius:14, padding:"10px 12px", background:"#0b0f18" },
-        flowTitle:{ fontSize:12, color:"#b9c3d6", marginBottom:8, letterSpacing:"0.04em" },
-        chip:(active)=>({
-          display:"inline-flex", alignItems:"center", gap:8, padding:"6px 10px",
-          background: active? palette.chipActive : palette.chip, color: active? palette.text : palette.muted,
-          border:`1px solid ${active? palette.accentPress : palette.border}`, borderRadius:9999, fontSize:12, cursor:"pointer",
-          boxShadow: active? `0 0 0 2px ${palette.chipRing}` : "none", transition:"all .15s ease"
-        }),
-
-        // PC-first 폼 그리드 (라벨 220px 고정, 2쌍/행)
-        grid:{ display:"grid", gridTemplateColumns:"220px 1fr 220px 1fr", gap:"14px 16px" },
-        ctrlSpan3:{ gridColumn:"2 / -1" },
-
-        hrSoft:{border:"none", borderTop:`1px dashed ${palette.border}`, margin:"12px 0"}
-      };
-
-      const responsiveCSS = `
-        .title-h1 { font-size: 18px; font-weight: 600; }
-        @media (max-width: 1024px) {
-          .title-h1 { font-size: 16px !important; }
-          .grid { display:grid; grid-template-columns: 1fr; gap:12px; }
-          .ctrl-span-3 { grid-column: 1 / -1 !important; }
-        }
-      `;
-
-      // ===== 툴팁 컴포넌트 =====
-      function Help({text}) {
-        const [open, setOpen] = useState(false);
-        return (
-          <span
-            style={styles.helpWrap}
-            onMouseEnter={()=>setOpen(true)}
-            onMouseLeave={()=>setOpen(false)}
-            onTouchStart={(e)=>{ e.preventDefault(); setOpen(o=>!o); }}
-            aria-label="도움말"
-          >
-            ?
-            {open && <span style={styles.tooltip}>{text}</span>}
-          </span>
-        );
-      }
-
-      // ===== Markdown 변환 =====
-      function mdToHtml(md) {
-        let h = md || "";
-        h = h.replace(/^# (.+)$/gm, "<h1>$1</h1>");
-        h = h.replace(/^## (.+)$/gm, "<h2>$1</h2>");
-        h = h.replace(/^### (.+)$/gm, "<h3>$1</h3>");
-        h = h.replace(/^> (.+)$/gm, "<blockquote>$1</blockquote>");
-        h = h.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-        h = h.replace(/\*(.+?)\*/g, "<em>$1</em>");
-        h = h.replace(/`([^`]+)`/g, "<code>$1</code>");
-        h = h.replace(/^\s*[-*]\s+(.+)$/gm, "<li>$1</li>");
-        h = h.replace(/(<li>.*<\/li>\n?)+/g, (m) => "<ul>" + m + "</ul>");
-        h = h.replace(/\n\n+/g, "<br/><br/>");
-        return h;
-      }
-      const html = useMemo(() => mdToHtml(markdown), [markdown]);
-
-      // ===== 제목 생성 유틸 =====
-      function topTerms(text, k = 5) {
-        const stop = new Set(["그리고","그러나","하지만","또는","또","이미","또한","그","이","저","것","수","때문","대한","에서","으로","하기","하는","있는","없는","합니다","했다","이다","같은","등","더","좀","매우","너무","되다","하다","있다","없다"]);
-        const counts = Object.create(null);
-        (text || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ")
-          .split(/\s+/).filter(w => w && w.length > 1 && !stop.has(w))
-          .forEach(w => { counts[w] = (counts[w]||0)+1; });
-        return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,k).map(([w])=>w);
-      }
-      function buildContextSnippet() {
-        const parts = [];
-        const angleName = {solve:"문제-해결", myth:"오해 바로잡기", check:"체크리스트", compare:"비교/대안", mistake:"실수 회피"}[angle] || angle;
-        const intentName = { info:"정보형", compare:"비교형", trans:"거래전환형", qa:"Q&A 요약" }[searchIntent] || searchIntent;
-        parts.push(`각도:${angleName}`, `의도:${intentName}`);
-        if (mustInclude.trim()) parts.push(`포함:${mustInclude.trim()}`);
-        if (avoidTerms.trim()) parts.push(`제외:${avoidTerms.trim()}`);
-        const ref = referenceText.trim() ? `참고:${referenceText.trim().slice(0,180)}…` : "";
-        return (parts.join(" / ") + (ref ? " / " + ref : "")).trim();
-      }
-      function generateTitleIdeasLocal(baseKeyword, n, ref, opts = { toneLevel:3, format:"auto" }) {
-        if (!baseKeyword || !baseKeyword.trim()) return [];
-        const base = baseKeyword.trim();
-        const refTerms = topTerms(ref, 4);
-        const refHint = refTerms.length ? ` (${refTerms.join(" · ")})` : "";
-        const ctx = buildContextSnippet();
-        const em = opts.toneLevel ?? 3;
-        const emotional = em <= 2.0, rational = em >= 4.0;
-        const emoHooks = [`${base}의 숨은 혜택`,`${
-          base}로 달라지는 하루`,`${base}를 알면 편해지는 이유`,`${base} 작은 비밀`];
-        const ratHooks = [`${base} 핵심 지표`,`${base} 3가지 핵심`,`${base} 실무 체크리스트`,`${base} 데이터로 보는 변화`];
-        const angleFrames = {
-          solve:[`${base} 문제 해결 가이드`,`${base} 이렇게 하면 풀립니다`],
-          myth:[`${base}에 대한 흔한 오해 3가지`,`${base} 사실과 오해`],
-          check:[`${base} 점검 체크리스트`,`${base} 준비물/조건 총정리`],
-          compare:[`${base} 비교: 선택 기준과 대안`,`${base} vs 유사 개념: 차이와 활용`],
-          mistake:[`${base} 할 때 흔한 실수와 피하는 법`,`${base} 실패 줄이는 법`],
-        }[angle] || [];
-        const intentFrames = {
-          info:[`${base} 핵심만 요약`,`${base} 무엇부터 알면 좋을까?`],
-          compare:[`${base} 선택 가이드`,`${base} 비교표로 보는 차이`],
-          trans:[`왜 지금 ${base}를 고려해야 할까`,`${base} 도입 전 확인할 3가지`],
-          qa:[`${base} Q&A: 자주 묻는 질문`,`${base} 상담전 미리 보는 핵심`],
-        }[searchIntent] || [];
-        const frames = [
-          ...(emotional?[`${emoHooks[0]}: 알아두면 득이 되는 가이드${refHint||""}`,`모두가 지나치는 ${base}의 ${emoHooks[3]}${refHint||""}`]:[]),
-          ...(rational?[`${ratHooks[1]}: 실전 적용 포인트${refHint||""}`,`${base} ${ratHooks[2]} (실무 기준)${refHint||""}`]:[]),
-          ...angleFrames.map(f=>`${f}${ctx ? " · " + ctx : ""}`),
-          ...intentFrames.map(f=>`${f}${ctx ? " · " + ctx : ""}`),
-          `${base} 최신 트렌드와 사례: 지금 적용하는 법${refHint}`,
-          `${base} 핵심만 요약: 꼭 알아야 할 체크포인트${refHint}`,
-        ];
-        function shapeByFormat(s) {
-          switch (opts.format) {
-            case "question": return `${base}는 무엇일까? ${refTerms[0]?`(${refTerms[0]})`:""}`.trim();
-            case "command":  return `지금 알아야 할 ${base} 핵심 가이드`;
-            case "list":     return `${base} 핵심 포인트 3가지`;
-            case "compare":  return `${base} 전/후 비교: 달라진 점과 대응`;
-            default: return s;
-          }
-        }
-        const mustList = mustInclude.split(",").map(s=>s.trim()).filter(Boolean);
-        const avoidList = avoidTerms.split(",").map(s=>s.trim()).filter(Boolean);
-        const shuffled = [...frames].sort(()=>Math.random()-0.5);
-        const count = Math.max(1, Number(n)||5), out = [], used = new Set();
-        for (let i=0;i<shuffled.length && out.length<count;i++){
-          let f = shapeByFormat(shuffled[i]);
-          if (mustList.length && !mustList.every(w=>f.includes(w))) f += " · " + mustList.filter(w=>!f.includes(w)).join(" ");
-          if (avoidList.some(w=>w && f.includes(w))) continue;
-          if (!used.has(f)) { used.add(f); out.push(f); }
-        }
-        while(out.length<count){
-          const fallback = `${base} 가이드: 시작하는 법${ctx ? " · " + ctx : ""}`;
-          if (!avoidList.some(w=>fallback.includes(w))) out.push(fallback); else break;
-        }
-        return out.slice(0,count);
-      }
-
-      async function generateTitleIdeasAI({ baseKeyword, n, ref, opts }) {
-        if (!apiKey) throw new Error("OpenAI API 키를 먼저 입력하세요.");
-        const payload = {
-          model: "gpt-5", temperature: 0.7,
-          messages: [
-            { role: "system", content: "You generate Korean blog title ideas only. Return STRICT JSON with the schema {\"titles\":[\"...\"]}." },
-            { role: "user", content:
-`키워드: ${baseKeyword}
+  // ===== 제목 생성 유틸(생략된 부분은 동일) =====
+  function topTerms(text,k=5){const stop=new Set(["그리고","그러나","하지만","또는","또","이미","또한","그","이","저","것","수","때문","대한","에서","으로","하기","하는","있는","없는","합니다","했다","이다","같은","등","더","좀","매우","너무","되다","하다","있다","없다"]);const c=Object.create(null);(text||"").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu," ").split(/\s+/).filter(w=>w&&w.length>1&&!stop.has(w)).forEach(w=>{c[w]=(c[w]||0)+1});return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,k).map(([w])=>w)}
+  function buildContextSnippet(){const parts=[];const angleName={solve:"문제-해결",myth:"오해 바로잡기",check:"체크리스트",compare:"비교/대안",mistake:"실수 회피"}[angle]||angle;const intentName={info:"정보형",compare:"비교형",trans:"거래전환형",qa:"Q&A 요약"}[searchIntent]||searchIntent;parts.push(`각도:${angleName}`,`의도:${intentName}`);if(mustInclude.trim())parts.push(`포함:${mustInclude.trim()}`);if(avoidTerms.trim())parts.push(`제외:${avoidTerms.trim()}`);const ref=referenceText.trim()?`참고:${referenceText.trim().slice(0,180)}…`:"";return(parts.join(" / ")+(ref?" / "+ref:"")).trim()}
+  function generateTitleIdeasLocal(baseKeyword,n,ref,opts={toneLevel:3,format:"auto"}){if(!baseKeyword||!baseKeyword.trim())return[];const base=baseKeyword.trim();const refTerms=topTerms(ref,4);const refHint=refTerms.length?` (${refTerms.join(" · ")})`:"";const ctx=buildContextSnippet();const em=opts.toneLevel??3;const emotional=em<=2.0,rational=em>=4.0;const emoHooks=[`${base}의 숨은 혜택`,`${base}로 달라지는 하루`,`${base}를 알면 편해지는 이유`,`${base} 작은 비밀`];const ratHooks=[`${base} 핵심 지표`,`${base} 3가지 핵심`,`${base} 실무 체크리스트`,`${base} 데이터로 보는 변화`];const angleFrames={solve:[`${base} 문제 해결 가이드`,`${base} 이렇게 하면 풀립니다`],myth:[`${base}에 대한 흔한 오해 3가지`,`${base} 사실과 오해`],check:[`${base} 점검 체크리스트`,`${base} 준비물/조건 총정리`],compare:[`${base} 비교: 선택 기준과 대안`,`${base} vs 유사 개념: 차이와 활용`],mistake:[`${base} 할 때 흔한 실수와 피하는 법`,`${base} 실패 줄이는 법`]}[angle]||[];const intentFrames={info:[`${base} 핵심만 요약`,`${base} 무엇부터 알면 좋을까?`],compare:[`${base} 선택 가이드`,`${base} 비교표로 보는 차이`],trans:[`왜 지금 ${base}를 고려해야 할까`,`${base} 도입 전 확인할 3가지`],qa:[`${base} Q&A: 자주 묻는 질문`,`${base} 상담전 미리 보는 핵심`]}[searchIntent]||[];const frames=[...(emotional?[`${emoHooks[0]}: 알아두면 득이 되는 가이드${refHint||""}`,`모두가 지나치는 ${base}의 ${emoHooks[3]}${refHint||""}`]:[]),...(rational?[`${ratHooks[1]}: 실전 적용 포인트${refHint||""}`,`${base} ${ratHooks[2]} (실무 기준)${refHint||""}`]:[]),...angleFrames.map(f=>`${f}${ctx?" · "+ctx:""}`),...intentFrames.map(f=>`${f}${ctx?" · "+ctx:""}`),`${base} 최신 트렌드와 사례: 지금 적용하는 법${refHint}`,`${base} 핵심만 요약: 꼭 알아야 할 체크포인트${refHint}`];function shapeByFormat(s){switch(opts.format){case"question":return`${base}는 무엇일까? ${refTerms[0]?`(${refTerms[0]})`:""}`.trim();case"command":return`지금 알아야 할 ${base} 핵심 가이드`;case"list":return`${base} 핵심 포인트 3가지`;case"compare":return`${base} 전/후 비교: 달라진 점과 대응`;default:return s}}const mustList=mustInclude.split(",").map(s=>s.trim()).filter(Boolean);const avoidList=avoidTerms.split(",").map(s=>s.trim()).filter(Boolean);const shuffled=[...frames].sort(()=>Math.random()-0.5);const count=Math.max(1,Number(n)||5);const out=[];const used=new Set();for(let i=0;i<shuffled.length&&out.length<count;i++){let f=shapeByFormat(shuffled[i]);if(mustList.length&&!mustList.every(w=>f.includes(w)))f+=" · "+mustList.filter(w=>!f.includes(w)).join(" ");if(avoidList.some(w=>w&&f.includes(w)))continue;if(!used.has(f)){used.add(f);out.push(f)}}while(out.length<count){const fallback=`${base} 가이드: 시작하는 법${ctx?" · "+ctx:""}`;if(!avoidList.some(w=>fallback.includes(w)))out.push(fallback);else break}return out.slice(0,count)}
+  async function generateTitleIdeasAI({ baseKeyword, n, ref, opts }){if(!apiKey)throw new Error("OpenAI API 키를 먼저 입력하세요.");const payload={model:"gpt-5",temperature:0.7,messages:[{role:"system",content:"You generate Korean blog title ideas only. Return STRICT JSON with the schema {\"titles\":[\"...\"]}."},{role:"user",content:`키워드: ${baseKeyword}
 제목 개수: ${Math.max(1, Number(n)||5)}
-참고 내용(선택): ${(ref||"").slice(0, 2000)}
+참고 내용(선택): ${(ref||"").slice(0,2000)}
 제목 형식: ${opts?.format || 'auto'}
 톤(1=감성,5=이성): ${opts?.toneLevel ?? 3}
 - 각도/후킹: ${({"solve":"문제-해결","myth":"오해 바로잡기","check":"체크리스트","compare":"비교/대안","mistake":"실수 회피"}[angle] || angle)}
 - 포함 단어: ${mustInclude || "없음"}
 - 제외 단어: ${avoidTerms || "없음"}
 - 검색 의도: ${({"info":"정보형","compare":"비교형","trans":"거래전환형","qa":"Q&A 요약"}[searchIntent] || searchIntent)}
-JSON만 반환: {"titles":["..."]}` },
-          ],
-        };
-        const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` }, body: JSON.stringify(payload),
-        });
-        if (!resp.ok) throw new Error(`OpenAI 오류: ${resp.status} ${await resp.text()}`);
-        const data = await resp.json();
-        let content = (data?.choices?.[0]?.message?.content) || "{}";
-        content = content.replace(/^```json\n?|\n?```$/g,"");
-        const parsed = JSON.parse(content);
-        const arr = Array.isArray(parsed.titles) ? parsed.titles : [];
-        const avoidList = avoidTerms.split(",").map(s=>s.trim()).filter(Boolean);
-        const mustList = mustInclude.split(",").map(s=>s.trim()).filter(Boolean);
-        const filtered = arr.filter(t => !avoidList.some(w => w && t.includes(w)))
-          .map(t => mustList.length && !mustList.every(w=>t.includes(w)) ? t + " · " + mustList.filter(w=>!t.includes(w)).join(" ") : t);
-        return (filtered.length ? filtered : arr).slice(0, Math.max(1, Number(n)||5));
-      }
+JSON만 반환: {"titles":["..."]}`}]};const resp=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${apiKey}`},body:JSON.stringify(payload)});if(!resp.ok)throw new Error(`OpenAI 오류: ${resp.status} ${await resp.text()}`);const data=await resp.json();let content=(data?.choices?.[0]?.message?.content)||"{}";content=content.replace(/^```json\n?|\n?```$/g,"");const parsed=JSON.parse(content);const arr=Array.isArray(parsed.titles)?parsed.titles:[];const avoidList=avoidTerms.split(",").map(s=>s.trim()).filter(Boolean);const mustList=mustInclude.split(",").map(s=>s.trim()).filter(Boolean);const filtered=arr.filter(t=>!avoidList.some(w=>w&&t.includes(w))).map(t=>mustList.length&&!mustList.every(w=>t.includes(w))?t+" · "+mustList.filter(w=>!t.includes(w)).join(" "):t);return(filtered.length?filtered:arr).slice(0,Math.max(1,Number(n)||5))}
+  function addDoubleBreaks(text){return(!text)?text:text.replace(/([.!?])( *)(?=\S)/g,"$1\n\n").replace(/\n{3,}/g,"\n\n")}
+  function localReview(md){return(!md)?md:md.replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").replace(/ +/g," ")}
+  function generateBody({title,keyword,minChars}){const kws=(keyword||"").split(/[ ,\s]+/).filter(Boolean);const main=kws[0]||keyword||"키워드";const intro=["## 서론",`${main}의 핵심을 빠르게 이해할 수 있도록 개요와 읽는 이유를 먼저 제시합니다.`,"본문에서는 개념 → 적용 → 체크리스트 순서로 정리합니다."].join("\n");const bullets=kws.slice(0,4).map(k=>`- **${k}**: 왜 중요한지, 어디에 쓰이는지 한 줄 요약`).join("\n");const core=["## 본론","### 핵심 개념",bullets||"- **핵심 포인트**: 주제를 한 문장으로 요약","", "### 사례와 적용","- 실제 적용 흐름을 2~3단계로 나눠 설명","- 숫자/비교/비유를 적절히 사용해 이해도 향상","", "### 체크리스트","- 오늘 바로 적용할 수 있는 3가지 행동","- 흔한 실수와 피해야 할 점"].join("\n");const outro=["## 결론",`${main}의 핵심을 다시 정리하고, 다음 행동 제안을 덧붙입니다.`,`- 한 문장 요약: ${main}은(는) **작게 시작하고 반복**할 때 성과가 납니다.`, "- 다음 단계: 체크리스트 실행 → 결과 기록 → 개선 포인트 반영"].join("\n");let md=`# ${title}\n\n${intro}\n\n${core}\n\n${outro}\n\n## 핵심 요약\n- ${main} 핵심만 간단히 정리\n- 오늘 바로 적용할 3가지 행동\n- 다음 글에서 다룰 확장 주제 예고`;const minLen=Math.max(400,Number(minChars)||800);while(md.length<minLen)md+=`\n\n> 참고: ${main}을(를) 익히려면 작은 실험을 꾸준히 반복하고 기록을 남기세요.`;return md}
+  async function onReview(){try{if(!markdown.trim())return;setError("");setLoading(true);const reviewed=(useAI&&apiKey)?await(async()=>{const payload={model:"gpt-5",temperature:0.3,messages:[{role:"system",content:"You are a professional Korean copy editor for blog content."},{role:"user",content:"다음 한국어 마크다운을 문법과 흐름 위주로 자연스럽게 다듬어 주세요. 의미/사실/키워드는 유지하고, 출력은 순수 마크다운만 주세요.\n\n---\n\n"+markdown}]};const resp=await fetch("https://api.openai.com/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${apiKey}`},body:JSON.stringify(payload)});if(!resp.ok)throw new Error(`OpenAI 오류: ${resp.status} ${await resp.text()}`);const data=await resp.json();return (data?.choices?.[0]?.message?.content||"").replace(/^```(?:md|markdown)?\n?|\n?```$/g,"")})();localReview(markdown);setMarkdown(addDoubleBreaks(reviewed));}catch(e){setError(e.message||String(e))}finally{setLoading(false)}}
+  function onGenerateBody(){const md0=generateBody({title:selectedTitle,keyword, minChars});setMarkdown(addDoubleBreaks(md0))}
 
-      // 본문 생성/검수
-      function addDoubleBreaks(text){ return (!text)?text : text.replace(/([.!?])( *)(?=\S)/g,"$1\n\n").replace(/\n{3,}/g,"\n\n"); }
-      function localReview(md){ return (!md)?md : md.replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").replace(/ +/g," "); }
-      function generateBody({ title, keyword, minChars }) {
-        const kws = (keyword || "").split(/[ ,\s]+/).filter(Boolean);
-        const main = kws[0] || keyword || "키워드";
-        const intro = ["## 서론", `${main}의 핵심을 빠르게 이해할 수 있도록 개요와 읽는 이유를 먼저 제시합니다.`, "본문에서는 개념 → 적용 → 체크리스트 순서로 정리합니다."].join("\n");
-        const bullets = kws.slice(0,4).map(k => `- **${k}**: 왜 중요한지, 어디에 쓰이는지 한 줄 요약`).join("\n");
-        const core = ["## 본론","### 핵심 개념",bullets || "- **핵심 포인트**: 주제를 한 문장으로 요약","", "### 사례와 적용","- 실제 적용 흐름을 2~3단계로 나눠 설명","- 숫자/비교/비유를 적절히 사용해 이해도 향상","", "### 체크리스트","- 오늘 바로 적용할 수 있는 3가지 행동","- 흔한 실수와 피해야 할 점"].join("\n");
-        const outro = ["## 결론", `${main}의 핵심을 다시 정리하고, 다음 행동 제안을 덧붙입니다.`, `- 한 문장 요약: ${main}은(는) **작게 시작하고 반복**할 때 성과가 납니다.`, "- 다음 단계: 체크리스트 실행 → 결과 기록 → 개선 포인트 반영"].join("\n");
-        let md = `# ${title}\n\n${intro}\n\n${core}\n\n${outro}\n\n## 핵심 요약\n- ${main} 핵심만 간단히 정리\n- 오늘 바로 적용할 3가지 행동\n- 다음 글에서 다룰 확장 주제 예고`;
-        const minLen = Math.max(400, Number(minChars) || 800);
-        while (md.length < minLen) md += `\n\n> 참고: ${main}을(를) 익히려면 작은 실험을 꾸준히 반복하고 기록을 남기세요.`;
-        return md;
-      }
+  async function onGenerateTitles(){try{setError("");setLoading(true);const opts={toneLevel,format:titleFormat};const ctx=[angle&&`각도:${angle}`,searchIntent&&`의도:${searchIntent}`,mustInclude&&`포함:${mustInclude}`,avoidTerms&&`제외:${avoidTerms}`].filter(Boolean).join(" / ");const refMerged=[referenceText,ctx,referencePrompt&&`프롬프트:${referencePrompt}`].filter(Boolean).join("\n\n");let ideas=[];if(useAI&&apiKey)ideas=await generateTitleIdeasAI({baseKeyword:keyword,n:titleCount,ref:refMerged,opts});if(!ideas.length)ideas=generateTitleIdeasLocal(keyword,titleCount,refMerged,opts);setTitleIdeas(ideas);setSelectedTitle("");}catch(e){setError(e.message||String(e))}finally{setLoading(false)}}
 
-      async function onReview() {
-        try {
-          if (!markdown.trim()) return;
-          setError(""); setLoading(true);
-          const reviewed = (useAI && apiKey) ? await (async ()=>{
-            const payload = {
-              model: "gpt-5", temperature: 0.3,
-              messages: [
-                { role: "system", content: "You are a professional Korean copy editor for blog content." },
-                { role: "user", content: "다음 한국어 마크다운을 문법과 흐름 위주로 자연스럽게 다듬어 주세요. 의미/사실/키워드는 유지하고, 출력은 순수 마크다운만 주세요.\n\n---\n\n"+markdown }
-              ],
-            };
-            const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-              method:"POST", headers:{ "Content-Type":"application/json", Authorization:`Bearer ${apiKey}`}, body:JSON.stringify(payload)
-            });
-            if (!resp.ok) throw new Error(`OpenAI 오류: ${resp.status} ${await resp.text()}`);
-            const data = await resp.json();
-            return (data?.choices?.[0]?.message?.content || "").replace(/^```(?:md|markdown)?\n?|\n?```$/g,"");
-          })() : localReview(markdown);
-          setMarkdown(addDoubleBreaks(reviewed));
-        } catch(e){ setError(e.message || String(e)); }
-        finally{ setLoading(false); }
-      }
+  return (
+    <div style={styles.app}>
+      <style>{responsiveCSS}</style>
 
-      function onGenerateBody() {
-        const md0 = generateBody({ title: selectedTitle, keyword, minChars });
-        setMarkdown(addDoubleBreaks(md0));
-      }
+      <header style={styles.header}>
+        <div style={styles.container}>
+          <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+            <div style={styles.logo}>AW</div>
+            <h1 className="title-h1">글쓰기 자동화 프로그램 · 3단계 마법사</h1>
+          </div>
+        </div>
+      </header>
 
-      async function onGenerateTitles() {
-        try {
-          setError(""); setLoading(true);
-          const opts = { toneLevel, format: titleFormat };
-          const ctx = [angle && `각도:${angle}`, searchIntent && `의도:${searchIntent}`, mustInclude && `포함:${mustInclude}`, avoidTerms && `제외:${avoidTerms}`].filter(Boolean).join(" / ");
-          const refMerged = [referenceText, ctx].filter(Boolean).join("\n\n");
-          let ideas = [];
-          if (useAI && apiKey) ideas = await generateTitleIdeasAI({ baseKeyword: keyword, n: titleCount, ref: refMerged, opts });
-          if (!ideas.length) ideas = generateTitleIdeasLocal(keyword, titleCount, refMerged, opts);
-          setTitleIdeas(ideas); setSelectedTitle("");
-        } catch (e) { setError(e.message || String(e)); }
-        finally { setLoading(false); }
-      }
+      <nav style={styles.tabs}>
+        {[1,2,3].map(n=>(
+          <button key={n} style={styles.tab(activeStep===n)} onClick={()=>setActiveStep(n)}>{n}단계</button>
+        ))}
+      </nav>
 
-      // ====== UI ======
-      return (
-        <div style={styles.app}>
-          <style>{responsiveCSS}</style>
-
-          <header style={styles.header}>
-            <div style={styles.container}>
-              <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-                <div style={styles.logo}>AW</div>
-                <h1 className="title-h1">글쓰기 자동화 프로그램 · 3단계 마법사</h1>
-              </div>
+      {/* STEP 1 – AI 체크시 API 입력칸 표시 */}
+      {activeStep===1&&(
+        <section style={styles.card}>
+          <div style={styles.stepHead}>
+            <h2 style={{ fontSize:16, fontWeight:600 }}>1. AI 사용 & API 키(선택)</h2>
+            <span style={styles.pill}>STEP 1</span>
+          </div>
+          <div className="grid" style={styles.grid}>
+            <div style={styles.labelRow}><span>AI 사용</span><Help text="체크 시 OpenAI 모델 사용. 미체크 상태에서도 로컬 규칙으로 제목 생성이 가능합니다."/></div>
+            <div className="ctrl" style={styles.ctrlWrap}>
+              <label style={{display:"inline-flex",alignItems:"center",gap:10}}>
+                <input type="checkbox" checked={useAI} onChange={(e)=>setUseAI(e.target.checked)}/>
+                <span style={styles.note}>OpenAI 모델 사용</span>
+              </label>
             </div>
-          </header>
 
-          <nav style={styles.tabs}>
-            {[1,2,3].map(n=>(
-              <button key={n} style={styles.tab(activeStep===n)} onClick={()=>setActiveStep(n)}>{n}단계</button>
-            ))}
-          </nav>
-
-          {/* STEP 1 – API 체크 시 입력칸 표시 */}
-          {activeStep===1 && (
-            <section style={styles.card}>
-              <div style={styles.stepHead}>
-                <h2 style={{ fontSize:16, fontWeight:600 }}>1. AI 사용 & API 키(선택)</h2>
-                <span style={styles.pill}>STEP 1</span>
-              </div>
-
-              <div className="grid" style={styles.grid}>
-                <div style={styles.labelRow}>
-                  <span>AI 사용</span>
-                  <Help text="체크 시 OpenAI 모델을 통해 제목/검수 품질을 높입니다. 미체크 시에도 로컬 규칙으로 제목 생성이 가능합니다." />
+            {useAI&&(
+              <>
+                <div style={styles.labelRow}><span>OpenAI API 키</span><Help text="OpenAI에서 발급한 개인 API 키. 브라우저 로컬 저장소에만 저장됩니다."/></div>
+                <div className="ctrl" style={styles.ctrlWrap}>
+                  <input type="password" value={apiKey} onChange={(e)=>setApiKey(e.target.value)} placeholder="sk-..." style={{...styles.input, ...styles.ring(true)}}/>
                 </div>
-                <div>
-                  <label style={{ ...styles.labelRow, gap:10 }}>
-                    <input type="checkbox" checked={useAI} onChange={(e)=>setUseAI(e.target.checked)} />
-                    <span style={styles.note}>OpenAI 모델 사용</span>
-                  </label>
-                </div>
+              </>
+            )}
+          </div>
+          <div style={{ marginTop:16, display:"flex", gap:8, justifyContent:"flex-end" }}>
+            <button onClick={()=>setActiveStep(2)} style={styles.btn}>다음(2단계: 키워드/제목)</button>
+          </div>
+        </section>
+      )}
 
-                {useAI && (
-                  <>
-                    <div style={styles.labelRow}>
-                      <span>OpenAI API 키</span>
-                      <Help text="OpenAI 대시보드에서 발급한 개인 API 키를 입력합니다. 로컬 저장소(LocalStorage)에만 보관됩니다." />
-                    </div>
-                    <div>
-                      <input type="password" value={apiKey} onChange={(e)=>setApiKey(e.target.value)} placeholder="sk-..." style={{...styles.input, ...styles.ring(true)}} />
-                      {!apiKey && <div style={{...styles.note, marginTop:6, color:"#b6c2d9"}}>※ 키 미입력 시 로컬 규칙 모드로 동작합니다.</div>}
-                    </div>
-                  </>
-                )}
-              </div>
+      {/* STEP 2 – PC-first 정렬 + 진행 순서 + ?툴팁 */}
+      {activeStep===2&&(
+        <section style={styles.card}>
+          <div style={styles.stepHead}>
+            <h2 style={{ fontSize:16, fontWeight:600 }}>2. 키워드 기반 제목 후보 생성</h2>
+            <span style={styles.pill}>STEP 2</span>
+          </div>
 
-              <div style={{ marginTop:16, display:"flex", gap:8, justifyContent:"flex-end" }}>
-                <button onClick={()=>setActiveStep(2)} style={styles.btn}>다음(2단계: 키워드/제목)</button>
-              </div>
-            </section>
-          )}
-
-          {/* ==== 여기서부터 2/2에 이어 붙이세요 ==== */}
-          {/* STEP 2 – PC-first 정렬 + 진행 순서 + ?툴팁 */}
-          {activeStep===2 && (
-            <section style={styles.card}>
-              <div style={styles.stepHead}>
-                <h2 style={{ fontSize:16, fontWeight:600 }}>2. 키워드 기반 제목 후보 생성</h2>
-                <span style={styles.pill}>STEP 2</span>
-              </div>
-
-              {/* 진행 순서 */}
-              <div style={styles.flowWrap}>
-                <div style={styles.flowTitle}>진행 순서</div>
-                <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-                  {[
-                    {i:1, t:"① 키워드", r:ref1},
-                    {i:2, t:"② 검색의도", r:ref2},
-                    {i:3, t:"③ 각도/후킹", r:ref3},
-                    {i:4, t:"④ 톤(감성↔이성)", r:ref4},
-                    {i:5, t:"⑤ 형식(선택)", r:ref5},
-                    {i:6, t:"⑥ 포함/제외어", r:ref6},
-                    {i:7, t:"⑦ 참고내용", r:ref7},
-                    {i:8, t:"⑧ 생성개수 → 생성", r:ref8},
-                  ].map(s=>(
-                    <span key={s.i} onClick={()=>s.r.current?.scrollIntoView({behavior:"smooth", block:"center"})}
-                          style={styles.chip(flowActive===s.i)}>{s.t}</span>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ height:8 }} />
-
-              <div className="grid" style={styles.grid}>
-                {/* ① 키워드 / ② 검색의도 */}
-                <div ref={ref1} style={styles.labelRow}>
-                  <span>키워드(쉼표 허용)</span>
-                  <Help text="핵심 키워드를 먼저 쓰고, 보조 키워드는 쉼표로 추가합니다. 예) 개인정보 보호법, 네이버 블로그, 썸네일" />
-                </div>
-                <div>
-                  <input value={keyword} onFocus={()=>setFlowActive(1)}
-                         onChange={(e)=>setKeyword(e.target.value)} placeholder="예: 개인정보 보호법"
-                         style={{...styles.input, ...styles.ring(flowActive===1)}} />
-                </div>
-
-                <div ref={ref2} style={styles.labelRow}>
-                  <span>검색 의도</span>
-                  <Help text="정보형: 설명/가이드 · 비교형: 선택 기준/대안 · 거래전환형: 문의/구매 유도 · Q&A: 질문모음 요약" />
-                </div>
-                <div>
-                  <select value={searchIntent} onFocus={()=>setFlowActive(2)}
-                          onChange={(e)=>setSearchIntent(e.target.value)}
-                          style={{...styles.input, ...styles.ring(flowActive===2)}}>
-                    <option value="info">정보형</option>
-                    <option value="compare">비교형</option>
-                    <option value="trans">거래전환형</option>
-                    <option value="qa">Q&A 요약</option>
-                  </select>
-                </div>
-
-                {/* ③ 각도/후킹 / ④ 톤 */}
-                <div ref={ref3} style={styles.labelRow}>
-                  <span>각도/후킹</span>
-                  <Help text="문제-해결, 오해 바로잡기, 체크리스트, 비교/대안, 실수 회피 중 선택해 제목의 시선을 잡습니다." />
-                </div>
-                <div>
-                  <select value={angle} onFocus={()=>setFlowActive(3)} onChange={(e)=>setAngle(e.target.value)}
-                          style={{...styles.input, ...styles.ring(flowActive===3)}}>
-                    <option value="solve">문제-해결</option>
-                    <option value="myth">오해 바로잡기</option>
-                    <option value="check">체크리스트</option>
-                    <option value="compare">비교/대안</option>
-                    <option value="mistake">실수 회피</option>
-                  </select>
-                </div>
-
-                <div ref={ref4} style={styles.labelRow}>
-                  <span>제목 톤 (감성 ↔ 이성)</span>
-                  <Help text="1~2: 은근한 이득 암시, 3: 중간, 4~5: 숫자/구조 강조(예: 3가지 핵심, 데이터 비교)" />
-                </div>
-                <div>
-                  <div style={{ padding:"8px 10px", borderRadius:12, border:`1px solid ${palette.border}`, ...styles.ring(flowActive===4) }}>
-                    <input type="range" min={1} max={5} step={0.5} value={toneLevel}
-                           onFocus={()=>setFlowActive(4)} onChange={(e)=>setToneLevel(parseFloat(e.target.value))}
-                           style={{ width:"100%", background:"transparent" }} />
-                  </div>
-                  <div style={styles.note}>현재값: {toneLevel} (1=감성, 5=이성)</div>
-                </div>
-
-                {/* ⑤ 형식(선택) – control을 2~4열 span */}
-                <div ref={ref5} style={styles.labelRow}>
-                  <span>형식 옵션(선택)</span>
-                  <Help text="질문형(~는 무엇일까), 명령형(지금 알아야 할 ~), 리스트형(~ 3가지 핵심), 비교형(A vs B) 등" />
-                </div>
-                <div className="ctrl-span-3" style={styles.ctrlSpan3}>
-                  <button onFocus={()=>setFlowActive(5)} onClick={()=>setFormatOpen(!formatOpen)} style={styles.btnGhost}>
-                    {formatOpen ? "형식 옵션 접기" : "형식 옵션 펼치기"}
-                  </button>
-                  {formatOpen && (
-                    <div style={{ display:"grid", gridTemplateColumns:"repeat(2, minmax(0,1fr))", gap:12, marginTop:12 }}>
-                      {[
-                        { id:'auto',     name:'자동(권장)',  tip:'키워드/톤/의도에 맞춰 자동 결정' },
-                        { id:'question', name:'질문형',      tip:'예: ~는 무엇일까?' },
-                        { id:'command',  name:'명령형',      tip:'예: 지금 알아야 할 ~' },
-                        { id:'list',     name:'리스트형',    tip:'예: ~ 3가지 핵심' },
-                        { id:'compare',  name:'비교형',      tip:'예: A vs B: 차이' },
-                      ].map(opt=>(
-                        <label key={opt.id}
-                               style={{ background:"#0e1117", border:`1px solid ${titleFormat===opt.id? palette.accentPress:palette.border}`,
-                                        borderRadius:12, padding:12, cursor:"pointer",
-                                        boxShadow:titleFormat===opt.id?`0 0 0 2px ${palette.chipRing}`:"none" }}>
-                          <input type="radio" name="titleFormat" checked={titleFormat===opt.id}
-                                 onChange={()=>setTitleFormat(opt.id)} style={{ marginRight:8 }}/>
-                          <b>{opt.name}</b><br/><span style={styles.note}>{opt.tip}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* ⑥ 포함/제외어 */}
-                <div ref={ref6} style={styles.labelRow}>
-                  <span>반드시 포함할 단어(쉼표)</span>
-                  <Help text="제목에 반드시 들어가야 할 단어를 쉼표로 구분합니다. 예) 체크리스트, 실무" />
-                </div>
-                <div>
-                  <input value={mustInclude} onFocus={()=>setFlowActive(6)}
-                         onChange={(e)=>setMustInclude(e.target.value)} placeholder="예: 체크리스트, 실무"
-                         style={{...styles.input, ...styles.ring(flowActive===6)}} />
-                </div>
-
-                <div style={styles.labelRow}>
-                  <span>피해야 할 단어(쉼표)</span>
-                  <Help text="제목에서 제외할 단어를 쉼표로 구분합니다. 예) 과장, 광고, 낚시" />
-                </div>
-                <div>
-                  <input value={avoidTerms} onFocus={()=>setFlowActive(6)}
-                         onChange={(e)=>setAvoidTerms(e.target.value)} placeholder="예: 과장, 광고, 낚시"
-                         style={{...styles.input, ...styles.ring(flowActive===6)}} />
-                </div>
-
-                {/* ⑦ 참고내용 – control span */}
-                <div ref={ref7} style={styles.labelRow}>
-                  <span>참고할 내용 (선택)</span>
-                  <Help text="제목에 반영하고 싶은 문단/핵심 포인트를 붙여넣습니다. 핵심어를 추출해 후킹에 반영합니다." />
-                </div>
-                <div className="ctrl-span-3" style={styles.ctrlSpan3}>
-                  <textarea value={referenceText} onFocus={()=>setFlowActive(7)}
-                            onChange={(e)=>setReferenceText(e.target.value)}
-                            placeholder="제목에 반영하고 싶은 문단/핵심 포인트를 붙여넣으세요."
-                            style={{...styles.textarea, ...styles.ring(flowActive===7)}} />
-                </div>
-
-                {/* ⑧ 생성개수 & 버튼 */}
-                <div ref={ref8} style={styles.labelRow}>
-                  <span>제목 생성 개수</span>
-                  <Help text="한 번에 만들 제목 개수(1~20)를 지정합니다. 기본 5개." />
-                </div>
-                <div>
-                  <input type="number" min={1} max={20} value={titleCount}
-                         onFocus={()=>setFlowActive(8)}
-                         onChange={(e)=>{ const v=parseInt(e.target.value||"0",10); setTitleCount(Number.isFinite(v)?v:5); }}
-                         style={{...styles.number, ...styles.ring(flowActive===8)}} />
-                </div>
-
-                <div></div>
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end" }}>
-                  <button
-                    disabled={loading || !((keyword||"").trim().length>0)}
-                    onClick={onGenerateTitles}
-                    style={{ ...styles.btn, opacity: (!((keyword||"").trim().length>0) || loading) ? 0.5 : 1 }}
-                  >
-                    {loading ? "생성 중..." : (useAI && apiKey ? "AI로 제목 생성" : "로컬 규칙으로 제목 생성")}
-                  </button>
-                </div>
-              </div>
-
-              {error && <div style={{ color: palette.danger, fontSize:12, marginTop:8 }}>오류: {error}</div>}
-
-              {titleIdeas.length>0 && (
-                <>
-                  <div style={{ marginTop:16, ...styles.note }}>생성된 제목을 선택하세요.</div>
-                  <div style={{ display:"grid", gridTemplateColumns:"repeat(2,minmax(0,1fr))", gap:12, marginTop:8 }}>
-                    {titleIdeas.map((t,i)=>(
-                      <label key={i}
-                             style={{ background:"#0e1117", border:`1px solid ${selectedTitle===t? palette.accentPress:palette.border}`,
-                                      borderRadius:12, padding:12, cursor:"pointer",
-                                      boxShadow:selectedTitle===t?`0 0 0 2px ${palette.chipRing}`:"none" }}>
-                        <input type="radio" name="pickTitle" checked={selectedTitle===t}
-                               onChange={()=>setSelectedTitle(t)} style={{ marginRight:8 }}/>
-                        <span>{t}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <div style={{ marginTop:16, display:"flex", gap:8, justifyContent:"flex-end" }}>
-                    <button onClick={()=>setActiveStep(1)} style={styles.btnGhost}>이전(1단계)</button>
-                    <button disabled={!selectedTitle.trim()} onClick={()=>setActiveStep(3)} style={{ ...styles.btn, opacity:selectedTitle.trim()?1:0.5 }}>
-                      다음(3단계: 본문)
-                    </button>
-                  </div>
-                </>
-              )}
-            </section>
-          )}
-
-          {/* STEP 3 – 본문 작성 & 검수 */}
-          {activeStep===3 && (
-            <section style={styles.card}>
-              <div style={styles.stepHead}>
-                <h2 style={{ fontSize:16, fontWeight:600 }}>3. 선택한 제목으로 본문 작성 & 검수</h2>
-                <span style={styles.pill}>STEP 3</span>
-              </div>
-
-              <div style={styles.grid}>
-                <div style={styles.labelRow}><span>선택한 제목</span><Help text="2단계에서 고른 제목을 수정할 수도 있습니다." /></div>
-                <div><input value={selectedTitle} onChange={(e)=>setSelectedTitle(e.target.value)} style={{...styles.input, ...styles.ring(true)}} /></div>
-
-                <div style={styles.labelRow}><span>본문 최소 글자수</span><Help text="자동 생성 시 최소 글자 수입니다. 400 이상 권장." /></div>
-                <div><input type="number" min={400} step={100} value={minChars}
-                            onChange={(e)=>{ const v=parseInt(e.target.value||'0',10); setMinChars(Number.isFinite(v)?v:1200); }}
-                            style={{...styles.number, ...styles.ring(false)}} /></div>
-
-                <div className="ctrl-span-3" style={styles.ctrlSpan3}>
-                  <label style={{ ...styles.labelRow, gap:8 }}>
-                    <input type="checkbox" defaultChecked onChange={()=>{}}/>
-                    문장 끝 여백 자동 추가(엔터 2회)
-                  </label>
-                </div>
-              </div>
-
-              <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button disabled={!selectedTitle.trim()} onClick={onGenerateBody} style={{ ...styles.btn, opacity: selectedTitle.trim() ? 1 : 0.5 }}>본문 생성</button>
-                <button disabled={!markdown.trim() || loading} onClick={onReview} style={{ ...styles.btnGhost, opacity: (!markdown.trim() || loading) ? 0.5 : 1 }}>
-                  {loading ? "검수 중..." : (useAI && apiKey ? "AI 검수(문법·흐름)" : "빠른 검수(로컬)")}
-                </button>
-                {error && <span style={{ color: palette.danger, fontSize: 12 }}>오류: {error}</span>}
-              </div>
-
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginTop:16 }}>
-                <div>
-                  <h3 style={styles.h3}>미리보기 (HTML 렌더)</h3>
-                  <div style={styles.prose} dangerouslySetInnerHTML={{ __html: html }} />
-                </div>
-                <div>
-                  <h3 style={styles.h3}>마크다운 원문</h3>
-                  <textarea value={markdown} onChange={(e)=>setMarkdown(e.target.value)} rows={16} style={styles.textarea} />
-                </div>
-              </div>
-
-              <div style={{ marginTop:16, display:"flex", gap:8, alignItems:"center", justifyContent:"space-between" }}>
-                <div style={styles.note}>
-                  * 섹션: <b style={{ color: '#e2e8f0' }}>서론</b> / <b style={{ color: '#e2e8f0' }}>본론</b> / <b style={{ color: '#e2e8f0' }}>결론</b> / <b style={{ color: '#e2e8f0' }}>핵심 요약</b><br/>
-                  * 네이버 호환 HTML 렌더.
-                </div>
-                <div style={{ display:'flex', gap:8 }}>
-                  <button onClick={()=>setActiveStep(2)} style={styles.btnGhost}>이전(2단계)</button>
-                  <button onClick={()=>window.scrollTo({top:0,behavior:'smooth'})} style={styles.btnGhost}>맨 위로</button>
-                </div>
-              </div>
-            </section>
-          )}
-
-          {/* Sticky mobile bar */}
-          <div style={styles.stickyMobile}>
-            <button onClick={() => setActiveStep(Math.max(1, activeStep - 1))} style={styles.btnGhost}>이전</button>
-            <div style={{ display:'flex', gap:8 }}>
-              {activeStep === 2 && (
-                <button disabled={loading || !((keyword||"").trim().length>0)} onClick={onGenerateTitles} style={{ ...styles.btn, opacity: (!((keyword||"").trim().length>0) || loading) ? 0.5 : 1 }}>{loading ? '생성 중...' : '제목 생성'}</button>
-              )}
-              {activeStep === 3 && (
-                <>
-                  <button disabled={!selectedTitle.trim()} onClick={onGenerateBody} style={{ ...styles.btn, opacity: selectedTitle.trim() ? 1 : 0.5 }}>본문 생성</button>
-                  <button disabled={!markdown.trim() || loading} onClick={onReview} style={{ ...styles.btnGhost, opacity: (!markdown.trim() || loading) ? 0.5 : 1 }}>
-                    {loading ? "검수 중..." : (useAI && apiKey ? "AI 검수" : "빠른 검수")}
-                  </button>
-                </>
-              )}
-              <button onClick={() => setActiveStep(Math.min(3, activeStep + 1))} style={{ ...styles.btn }}>다음</button>
+          {/* 진행 순서 */}
+          <div style={styles.flowWrap}>
+            <div style={styles.flowTitle}>진행 순서</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+              {[{i:1,t:"① 키워드",r:ref1},{i:2,t:"② 검색의도",r:ref2},{i:3,t:"③ 각도/후킹",r:ref3},{i:4,t:"④ 톤",r:ref4},{i:5,t:"⑤ 형식(선택)",r:ref5},{i:6,t:"⑥ 포함/제외어",r:ref6},{i:7,t:"⑦ 참고내용",r:ref7},{i:8,t:"⑧ 생성개수 → 생성",r:ref8}]
+                .map(s=>(
+                  <span key={s.i} onClick={()=>s.r.current?.scrollIntoView({behavior:"smooth",block:"center"})}
+                        style={styles.chip(flowActive===s.i)}>{s.t}</span>
+                ))}
             </div>
           </div>
 
-          <footer style={{ maxWidth: 1200, margin: '32px auto', padding: '0 12px' }}>
-            <hr style={{ borderColor: "#1b1e25", margin: '12px 0' }} />
-            <p style={{ fontSize:12, color:"#9aa3b2" }}>
-              PC 우선 4열 그리드(라벨 220px)로 겹침 없이 정렬됩니다. 모바일에서는 1열로 자연스럽게 접힙니다.
-              “진행 순서” 칩은 포커스 시 자동 강조됩니다. 라벨의 <b>?</b> 아이콘을 터치/호버하면 각 입력 예시가 표시됩니다.
-            </p>
-          </footer>
-        </div>
-      );
-    }
+          <div style={{ height:8 }} />
 
-    // ----- Mount -----
-    const root = ReactDOM.createRoot(document.getElementById("root"));
-    root.render(<NaverWizardDark />);
-  </script>
+          <div className="grid" style={styles.grid}>
+            {/* ① 키워드 / ② 검색의도 */}
+            <div ref={ref1} style={styles.labelRow}><span>키워드(쉼표 허용)</span><Help text="핵심 키워드 우선, 보조 키워드는 쉼표로 추가. 예) 개인정보 보호법, 네이버 블로그, 썸네일"/></div>
+            <div className="ctrl" style={styles.ctrlWrap}>
+              <input value={keyword} onFocus={()=>setFlowActive(1)} onChange={(e)=>setKeyword(e.target.value)} placeholder="예: 개인정보 보호법" style={{...styles.input, ...styles.ring(flowActive===1)}}/>
+            </div>
+
+            <div ref={ref2} style={styles.labelRow}><span>검색 의도</span><Help text="정보형/비교형/거래전환형/Q&A 중 선택해 제목 방향을 정합니다."/></div>
+            <div className="ctrl" style={styles.ctrlWrap}>
+              <select value={searchIntent} onFocus={()=>setFlowActive(2)} onChange={(e)=>setSearchIntent(e.target.value)} style={{...styles.input, ...styles.ring(flowActive===2)}}>
+                <option value="info">정보형</option><option value="compare">비교형</option><option value="trans">거래전환형</option><option value="qa">Q&A 요약</option>
+              </select>
+            </div>
+
+            {/* ③ 각도/후킹 / ④ 톤 */}
+            <div ref={ref3} style={styles.labelRow}><span>각도/후킹</span><Help text="문제-해결, 오해 바로잡기, 체크리스트, 비교/대안, 실수 회피"/></div>
+            <div className="ctrl" style={styles.ctrlWrap}>
+              <select value={angle} onFocus={()=>setFlowActive(3)} onChange={(e)=>setAngle(e.target.value)} style={{...styles.input, ...styles.ring(flowActive===3)}}>
+                <option value="solve">문제-해결</option><option value="myth">오해 바로잡기</option><option value="check">체크리스트</option><option value="compare">비교/대안</option><option value="mistake">실수 회피</option>
+              </select>
+            </div>
+
+            <div ref={ref4} style={styles.labelRow}><span>제목 톤 (감성↔이성)</span><Help text="1~2 감성·암시 / 3 중간 / 4~5 숫자·구조 강조"/></div>
+            <div className="ctrl" style={styles.ctrlWrap}>
+              <div style={{ padding:"8px 10px", borderRadius:12, border:`1px solid ${palette.border}`, ...styles.ring(flowActive===4) }}>
+                <input type="range" min={1} max={5} step={0.5} value={toneLevel}
+                       onFocus={()=>setFlowActive(4)} onChange={(e)=>setToneLevel(parseFloat(e.target.value))}
+                       style={{ width:"100%", background:"transparent" }} />
+              </div>
+              <div style={styles.note}>현재값: {toneLevel} (1=감성, 5=이성)</div>
+            </div>
+
+            {/* ⑤ 형식(선택) – span */}
+            <div ref={ref5} style={styles.labelRow}><span>형식 옵션(선택)</span><Help text="질문형/명령형/리스트형/비교형 등 제목 포맷 선택"/></div>
+            <div className="ctrl ctrl-span-3" style={{...styles.ctrlWrap, ...styles.ctrlSpan3}}>
+              <button onFocus={()=>setFlowActive(5)} onClick={()=>setFormatOpen(!formatOpen)} style={styles.btnGhost}>
+                {formatOpen ? "형식 옵션 접기" : "형식 옵션 펼치기"}
+              </button>
+              {formatOpen&&(
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(2,minmax(0,1fr))", gap:12, marginTop:12 }}>
+                  {[{id:'auto',name:'자동(권장)',tip:'키워드/톤/의도에 맞춰 자동 결정'},{id:'question',name:'질문형',tip:'예: ~는 무엇일까?'},{id:'command',name:'명령형',tip:'예: 지금 알아야 할 ~'},{id:'list',name:'리스트형',tip:'예: ~ 3가지 핵심'},{id:'compare',name:'비교형',tip:'예: A vs B: 차이'}]
+                    .map(opt=>(
+                      <label key={opt.id} style={{ background:"#0e1117", border:`1px solid ${titleFormat===opt.id?palette.accentPress:palette.border}`, borderRadius:12, padding:12, cursor:"pointer", boxShadow:titleFormat===opt.id?`0 0 0 2px ${palette.chipRing}`:"none" }}>
+                        <input type="radio" name="titleFormat" checked={titleFormat===opt.id} onChange={()=>setTitleFormat(opt.id)} style={{ marginRight:8 }}/>
+                        <b>{opt.name}</b><br/><span style={styles.note}>{opt.tip}</span>
+                      </label>
+                    ))}
+                </div>
+              )}
+            </div>
+
+            {/* ⑥ 포함/제외어 */}
+            <div ref={ref6} style={styles.labelRow}><span>반드시 포함할 단어(쉼표)</span><Help text="예) 체크리스트, 실무"/></div>
+            <div className="ctrl" style={styles.ctrlWrap}>
+              <input value={mustInclude} onFocus={()=>setFlowActive(6)} onChange={(e)=>setMustInclude(e.target.value)} placeholder="예: 체크리스트, 실무" style={{...styles.input, ...styles.ring(flowActive===6)}}/>
+            </div>
+            <div style={styles.labelRow}><span>피해야 할 단어(쉼표)</span><Help text="예) 과장, 광고, 낚시"/></div>
+            <div className="ctrl" style={styles.ctrlWrap}>
+              <input value={avoidTerms} onFocus={()=>setFlowActive(6)} onChange={(e)=>setAvoidTerms(e.target.value)} placeholder="예: 과장, 광고, 낚시" style={{...styles.input, ...styles.ring(flowActive===6)}}/>
+            </div>
+
+            {/* ⑦ 참고내용 */}
+            <div ref={ref7} style={styles.labelRow}><span>참고할 내용 (선택)</span><Help text="제목에 반영할 문단/핵심 포인트를 붙여넣습니다."/></div>
+            <div className="ctrl ctrl-span-3" style={{...styles.ctrlWrap, ...styles.ctrlSpan3}}>
+              <textarea value={referenceText} onFocus={()=>setFlowActive(7)} onChange={(e)=>setReferenceText(e.target.value)} placeholder="제목에 반영하고 싶은 문단/핵심 포인트를 붙여넣으세요." style={{...styles.textarea, ...styles.ring(flowActive===7)}}/>
+            </div>
+
+            {/* ⑧ 개수 + 버튼 */}
+            <div ref={ref8} style={styles.labelRow}><span>제목 생성 개수</span><Help text="1~20개 중 선택. 기본 5개."/></div>
+            <div className="ctrl" style={styles.ctrlWrap}>
+              <input type="number" min={1} max={20} value={titleCount} onFocus={()=>setFlowActive(8)} onChange={(e)=>{ const v=parseInt(e.target.value||"0",10); setTitleCount(Number.isFinite(v)?v:5); }} style={{...styles.number, ...styles.ring(flowActive===8)}}/>
+            </div>
+            <div></div>
+            <div className="ctrl" style={{...styles.ctrlWrap, display:"flex", justifyContent:"flex-end"}}>
+              <button disabled={loading||!((keyword||"").trim().length>0)} onClick={onGenerateTitles} style={{...styles.btn, opacity:(!((keyword||"").trim().length>0)||loading)?0.5:1}}>
+                {loading?"생성 중...":(useAI&&apiKey?"AI로 제목 생성":"로컬 규칙으로 제목 생성")}
+              </button>
+            </div>
+          </div>
+
+          {error && <div style={{ color: palette.danger, fontSize:12, marginTop:8 }}>오류: {error}</div>}
+
+          {titleIdeas.length>0&&(
+            <>
+              <div style={{ marginTop:16, ...styles.note }}>생성된 제목을 선택하세요.</div>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(2,minmax(0,1fr))", gap:12, marginTop:8 }}>
+                {titleIdeas.map((t,i)=>(
+                  <label key={i} style={{ background:"#0e1117", border:`1px solid ${selectedTitle===t? palette.accentPress:palette.border}`, borderRadius:12, padding:12, cursor:"pointer", boxShadow:selectedTitle===t?`0 0 0 2px ${palette.chipRing}`:"none" }}>
+                    <input type="radio" name="pickTitle" checked={selectedTitle===t} onChange={()=>setSelectedTitle(t)} style={{ marginRight:8 }}/>
+                    <span>{t}</span>
+                  </label>
+                ))}
+              </div>
+              <div style={{ marginTop:16, display:"flex", gap:8, justifyContent:"flex-end" }}>
+                <button onClick={()=>setActiveStep(1)} style={styles.btnGhost}>이전(1단계)</button>
+                <button disabled={!selectedTitle.trim()} onClick={()=>setActiveStep(3)} style={{ ...styles.btn, opacity:selectedTitle.trim()?1:0.5 }}>다음(3단계: 본문)</button>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      {/* STEP 3 – 본문 + 프롬프트 입력 추가 */}
+      {activeStep===3&&(
+        <section style={styles.card}>
+          <div style={styles.stepHead}>
+            <h2 style={{ fontSize:16, fontWeight:600 }}>3. 선택한 제목으로 본문 작성 & 검수</h2>
+            <span style={styles.pill}>STEP 3</span>
+          </div>
+
+          <div className="grid" style={styles.grid}>
+            <div style={styles.labelRow}><span>선택한 제목</span><Help text="2단계에서 고른 제목을 여기서 손봐도 됩니다."/></div>
+            <div className="ctrl" style={styles.ctrlWrap}><input value={selectedTitle} onChange={(e)=>setSelectedTitle(e.target.value)} style={{...styles.input, ...styles.ring(true)}}/></div>
+
+            <div style={styles.labelRow}><span>본문 최소 글자수</span><Help text="자동 생성 시 최소 글자 수(400 이상 권장)."/></div>
+            <div className="ctrl" style={styles.ctrlWrap}><input type="number" min={400} step={100} value={minChars} onChange={(e)=>{ const v=parseInt(e.target.value||'0',10); setMinChars(Number.isFinite(v)?v:1200); }} style={{...styles.number}}/></div>
+
+            <div style={styles.labelRow}><span>참고할 글/프롬프트</span><Help text="본문 생성 시 참고로 사용할 키워드, 문단, 프롬프트를 붙여넣으세요. 제목 생성에도 활용됩니다."/></div>
+            <div className="ctrl ctrl-span-3" style={{...styles.ctrlWrap, ...styles.ctrlSpan3}}>
+              <textarea value={referencePrompt} onChange={(e)=>setReferencePrompt(e.target.value)} placeholder="예) 톤은 중립, 실무 예시 2개 포함, 체크리스트는 3개로 제한…" style={styles.textarea}/>
+            </div>
+
+            <div className="ctrl ctrl-span-3" style={{...styles.ctrlWrap, ...styles.ctrlSpan3}}>
+              <label style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
+                <input type="checkbox" defaultChecked onChange={()=>{}}/>
+                문장 끝 여백 자동 추가(엔터 2회)
+              </label>
+            </div>
+          </div>
+
+          <div style={{ marginTop:12, display:'flex', gap:8, flexWrap:'wrap' }}>
+            <button disabled={!selectedTitle.trim()} onClick={onGenerateBody} style={{ ...styles.btn, opacity:selectedTitle.trim()?1:0.5 }}>본문 생성</button>
+            <button disabled={!markdown.trim()||loading} onClick={onReview} style={{ ...styles.btnGhost, opacity:(!markdown.trim()||loading)?0.5:1 }}>
+              {loading?"검수 중...":(useAI&&apiKey?"AI 검수(문법·흐름)":"빠른 검수(로컬)")}
+            </button>
+            {error && <span style={{ color: palette.danger, fontSize:12 }}>오류: {error}</span>}
+          </div>
+
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginTop:16 }}>
+            <div>
+              <h3 style={styles.h3}>미리보기 (HTML 렌더)</h3>
+              <div style={styles.prose} dangerouslySetInnerHTML={{ __html: html }} />
+            </div>
+            <div>
+              <h3 style={styles.h3}>마크다운 원문</h3>
+              <textarea value={markdown} onChange={(e)=>setMarkdown(e.target.value)} rows={16} style={styles.textarea} />
+            </div>
+          </div>
+
+          <div style={{ marginTop:16, display:"flex", gap:8, alignItems:"center", justifyContent:"space-between" }}>
+            <div style={styles.note}>* PC 우선 4열 그리드(라벨 240px, 행 간격 20px)로 겹침 없이 정렬됩니다.</div>
+            <div style={{ display:'flex', gap:8 }}>
+              <button onClick={()=>setActiveStep(2)} style={styles.btnGhost}>이전(2단계)</button>
+              <button onClick={()=>window.scrollTo({top:0,behavior:'smooth'})} style={styles.btnGhost}>맨 위로</button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* 하단 고정 바 */}
+      <div style={styles.stickyMobile}>
+        <button onClick={()=>setActiveStep(Math.max(1,activeStep-1))} style={styles.btnGhost}>이전</button>
+        <div style={{ display:'flex', gap:8 }}>
+          {activeStep===2&&(
+            <button disabled={loading||!((keyword||"").trim().length>0)} onClick={onGenerateTitles} style={{...styles.btn, opacity:(!((keyword||"").trim().length>0)||loading)?0.5:1}}>{loading?'생성 중...':'제목 생성'}</button>
+          )}
+          {activeStep===3&&(
+            <>
+              <button disabled={!selectedTitle.trim()} onClick={onGenerateBody} style={{ ...styles.btn, opacity:selectedTitle.trim()?1:0.5 }}>본문 생성</button>
+              <button disabled={!markdown.trim()||loading} onClick={onReview} style={{ ...styles.btnGhost, opacity:(!markdown.trim()||loading)?0.5:1 }}>{loading?"검수 중...":(useAI&&apiKey?"AI 검수":"빠른 검수")}</button>
+            </>
+          )}
+          <button onClick={()=>setActiveStep(Math.min(3,activeStep+1))} style={styles.btn}>다음</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Mount
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<NaverWizardDark />);
+</script>
 </body>
 </html>
