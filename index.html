@@ -275,7 +275,7 @@ function NaverWizardDark(){
   async function generateTitleIdeasAI({ baseKeyword, n, ref, opts }){
     if(!apiKey) throw new Error("OpenAI API 키를 먼저 입력하세요.");
     const payload = {
-      model: "gpt-5", temperature: 0.7,
+      model: "gpt-4o-mini", temperature: 1,
       messages: [
         { role: "system", content: "You generate Korean blog title ideas only. Return STRICT JSON with the schema {\"titles\":[\"...\"]}." },
         { role: "user", content:
@@ -329,7 +329,7 @@ JSON만 반환: {"titles":["..."]}` },
       if(!markdown.trim()) return;
       setError(""); setLoading(true);
       const reviewed = (useAI && apiKey) ? await (async ()=>{
-        const payload = { model:"gpt-5", temperature:0.3, messages:[
+        const payload = { model:"gpt-4o-mini", temperature:1, messages:[
           { role:"system", content:"You are a professional Korean copy editor for blog content." },
           { role:"user", content:"다음 한국어 마크다운을 문법과 흐름 위주로 자연스럽게 다듬어 주세요. 의미/사실/키워드는 유지하고, 출력은 순수 마크다운만 주세요.\n\n---\n\n"+markdown }
         ]};
