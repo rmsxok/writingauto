@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>글쓰기 자동화 · 3단계 마법사 (Responsive)</title>
+  <title>글쓰기 자동화 · 3단계 마법사 (Responsive Full)</title>
 
   <!-- React / ReactDOM / Babel (개발용 CDN) -->
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
@@ -14,20 +14,25 @@
     /* ---- 글로벌 리셋 & 모바일 넘침 방지 ---- */
     * { box-sizing: border-box; }
     html,body,#root{height:100%;margin:0}
-    body{font-family:"Noto Sans KR",system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Malgun Gothic,"맑은 고딕",Arial,sans-serif;
-         -webkit-text-size-adjust:100%; background:#0b0c0f; color:#e7eaf0;}
+    body{
+      font-family:"Noto Sans KR",system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Malgun Gothic,"맑은 고딕",Arial,sans-serif;
+      -webkit-text-size-adjust:100%; background:#0b0c0f; color:#e7eaf0;
+    }
     input,select,textarea{ font-size:16px; max-width:100%; } /* iOS 확대/넘침 방지 */
     ::-webkit-scrollbar{height:10px;width:10px}
     ::-webkit-scrollbar-thumb{background:#1f2430;border-radius:8px}
 
-    /* ---- 반응형 그리드: 4열 → 2열 → 1열 ---- */
-    :root{ --gap:18px; }
+    /* ---- PC-우선 반응형 그리드: 4열 → 2열 → 1열 ---- */
+    :root{ --gap:18px; --label-w:260px; }
     .grid-4{
       display:grid;
-      grid-template-columns: 240px 1fr 240px 1fr; /* (라벨)(입력) × 2세트 */
+      grid-template-columns: var(--label-w) 1fr var(--label-w) 1fr; /* (라벨)(입력) × 2세트 */
       column-gap: var(--gap);
       row-gap: 20px;
       scroll-margin-top: 76px; /* sticky 헤더 고려 */
+    }
+    @media (max-width:1200px){
+      :root{ --label-w:220px; }
     }
     @media (max-width:1024px){
       .grid-4{ grid-template-columns: 1fr 1fr; }
@@ -53,7 +58,7 @@
 
     /* ---- 본문 읽기 카드/모달 ---- */
     .read-card{
-      border:1px solid #1b1e25; border-radius:16px; background:#0f1217; padding:16px; 
+      border:1px solid #1b1e25; border-radius:16px; background:#0f1217; padding:16px;
       line-height:1.7; letter-spacing:.01em;
     }
     .read-card h1,.read-card h2,.read-card h3{ color:#e9edf7; }
@@ -77,7 +82,7 @@
       };
       const OPENAI_MODEL = "gpt-4o-mini"; // 안정/가성비
 
-      const [activeStep,setActiveStep] = useState(3);
+      const [activeStep,setActiveStep] = useState(1);
 
       // step1
       const [useAI,setUseAI] = useState(false);
@@ -441,8 +446,7 @@ JSON만 반환: {"titles":["..."]}` },
           }
           md = autoSpacing?addDoubleBreaks(md):md;
           setMarkdown(md);
-          /* 본문 생성 직후 모바일에서도 보기 쉽게 모달 자동 오픈 */
-          setReaderOpen(true);
+          setReaderOpen(true); // 본문 생성 직후 보기
         }catch(e){ setError(e.message||String(e)); }
         finally{ setGenBusy(false); }
       }
@@ -482,7 +486,165 @@ JSON만 반환: {"titles":["..."]}` },
             ))}
           </nav>
 
-          {/* STEP 3만 예시로 표시(1/2/단계 UI는 동일 구조로 유지) */}
+          {/* STEP 1 */}
+          {activeStep===1&&(
+            <section style={{ ...styles.card, ...styles.container }}>
+              <div style={styles.stepHead}>
+                <h2 style={{ fontSize:16, fontWeight:600, margin:0 }}>1. AI 사용 & API 키(선택)</h2>
+                <span style={styles.pill}>STEP 1</span>
+              </div>
+
+              <div className="grid-4">
+                <div style={styles.labelRow}><span>AI 사용</span><Help text="체크 시 OpenAI 모델 사용. 미체크 상태에서도 로컬 규칙으로 제목/본문 생성 가능."/></div>
+                <div style={styles.ctrlWrap}>
+                  <label style={{display:"inline-flex",alignItems:"center",gap:10}}>
+                    <input type="checkbox" checked={useAI} onChange={(e)=>setUseAI(e.target.checked)}/>
+                    <span style={styles.note}>OpenAI 모델 사용</span>
+                  </label>
+                </div>
+
+                {useAI&&(
+                  <>
+                    <div style={styles.labelRow}><span>OpenAI API 키</span><Help text="OpenAI 대시보드에서 발급. 브라우저 로컬 저장소에만 저장됩니다."/></div>
+                    <div style={styles.ctrlWrap}>
+                      <input type="password" value={apiKey} onChange={(e)=>setApiKey(e.target.value)} placeholder="sk-..." style={{...styles.input, ...styles.ring(true)}}/>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div style={{ marginTop:16, display:"flex", gap:8, justifyContent:"flex-end" }}>
+                <button onClick={()=>setActiveStep(2)} className="mb-full" style={styles.btn}>다음(2단계: 키워드/제목)</button>
+              </div>
+            </section>
+          )}
+
+          {/* STEP 2 */}
+          {activeStep===2&&(
+            <section style={{ ...styles.card, ...styles.container }}>
+              <div style={styles.stepHead}>
+                <h2 style={{ fontSize:16, fontWeight:600, margin:0 }}>2. 키워드 기반 제목 후보 생성</h2>
+                <span style={styles.pill}>STEP 2</span>
+              </div>
+
+              <div className="flow-wrap" style={{ border:`1px dashed ${palette.border}`, borderRadius:14, padding:"10px 12px", background:"#0b0f18", marginBottom:8 }}>
+                <div style={{ fontSize:12, color:"#b9c3d6", marginBottom:8, letterSpacing:"0.04em" }}>진행 순서</div>
+                <div className="flow-chips">
+                  {[{i:1,t:"① 키워드",r:ref1},{i:2,t:"② 검색의도",r:ref2},{i:3,t:"③ 각도/후킹",r:ref3},{i:4,t:"④ 톤",r:ref4},{i:5,t:"⑤ 형식(선택)",r:ref5},{i:6,t:"⑥ 포함/제외어",r:ref6},{i:7,t:"⑦ 참고내용",r:ref7},{i:8,t:"⑧ 생성개수 → 생성",r:ref8}]
+                  .map(s=>(
+                    <span key={s.i} onClick={()=>s.r.current?.scrollIntoView({behavior:"smooth",block:"center"})}
+                          class="chip"
+                          style={{
+                            background:(flowActive===s.i)? "#12203a":"#0c0f14",
+                            color:(flowActive===s.i)?palette.text:palette.muted,
+                            border:`1px solid ${(flowActive===s.i)? palette.accentPress:palette.border}`,
+                            boxShadow:(flowActive===s.i)?`0 0 0 2px ${palette.chipRing}`:"none"
+                          }}>{s.t}</span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid-4">
+                {/* ① 키워드 / ② 검색 의도 */}
+                <div ref={ref1} style={styles.labelRow}><span>키워드(쉼표 허용)</span><Help text="핵심 키워드 우선, 보조 키워드는 쉼표로 추가. 예) 개인정보 보호법, 네이버 블로그"/></div>
+                <div style={styles.ctrlWrap}>
+                  <input value={keyword} onFocus={()=>setFlowActive(1)} onChange={(e)=>setKeyword(e.target.value)} placeholder="예: 개인정보 보호법" style={{...styles.input, ...styles.ring(flowActive===1)}}/>
+                </div>
+
+                <div ref={ref2} style={styles.labelRow}><span>검색 의도</span><Help text="정보형/비교형/거래전환형/Q&A 중 선택해 제목 방향을 정합니다."/></div>
+                <div style={styles.ctrlWrap}>
+                  <select value={searchIntent} onFocus={()=>setFlowActive(2)} onChange={(e)=>setSearchIntent(e.target.value)} style={{...styles.input, ...styles.ring(flowActive===2)}}>
+                    <option value="info">정보형</option><option value="compare">비교형</option><option value="trans">거래전환형</option><option value="qa">Q&A 요약</option>
+                  </select>
+                </div>
+
+                {/* ③ 각도 / ④ 톤 */}
+                <div ref={ref3} style={styles.labelRow}><span>각도/후킹</span><Help text="문제-해결, 오해 바로잡기, 체크리스트, 비교/대안, 실수 회피"/></div>
+                <div style={styles.ctrlWrap}>
+                  <select value={angle} onFocus={()=>setFlowActive(3)} onChange={(e)=>setAngle(e.target.value)} style={{...styles.input, ...styles.ring(flowActive===3)}}>
+                    <option value="solve">문제-해결</option><option value="myth">오해 바로잡기</option><option value="check">체크리스트</option><option value="compare">비교/대안</option><option value="mistake">실수 회피</option>
+                  </select>
+                </div>
+
+                <div ref={ref4} style={styles.labelRow}><span>제목 톤 (감성↔이성)</span><Help text="1~2: 감성 암시 / 3: 중간 / 4~5: 숫자·구조 강조"/></div>
+                <div style={styles.ctrlWrap}>
+                  <div style={{ padding:"8px 10px", borderRadius:12, border:`1px solid ${palette.border}`, ...styles.ring(flowActive===4) }}>
+                    <input type="range" min={1} max={5} step={0.5} value={toneLevel}
+                           onFocus={()=>setFlowActive(4)} onChange={(e)=>setToneLevel(parseFloat(e.target.value))}
+                           style={{ width:"100%", background:"transparent" }} />
+                  </div>
+                  <div style={styles.note}>현재값: {toneLevel} (1=감성, 5=이성)</div>
+                </div>
+
+                {/* ⑤ 형식(선택) */}
+                <div ref={ref5} style={styles.labelRow}><span>형식 옵션(선택)</span><Help text="질문형/명령형/리스트형/비교형 등 제목 포맷 선택"/></div>
+                <div className="ctrl-span-3" style={styles.ctrlWrap}>
+                  <button onFocus={()=>setFlowActive(5)} onClick={()=>setFormatOpen(!formatOpen)} className="mb-full" style={styles.btnGhost}>{formatOpen?"형식 옵션 접기":"형식 옵션 펼치기"}</button>
+                  {formatOpen&&(
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))", gap:12, marginTop:12 }}>
+                      {[{id:'auto',name:'자동(권장)',tip:'키워드/톤/의도에 맞춰 자동 결정'},{id:'question',name:'질문형',tip:'예: ~는 무엇일까?'},{id:'command',name:'명령형',tip:'예: 지금 알아야 할 ~'},{id:'list',name:'리스트형',tip:'예: ~ 3가지 핵심'},{id:'compare',name:'비교형',tip:'예: A vs B: 차이'}]
+                      .map(opt=>(
+                        <label key={opt.id} style={{ background:"#0e1117", border:`1px solid ${titleFormat===opt.id? palette.accentPress:palette.border}`, borderRadius:12, padding:12, cursor:"pointer", boxShadow:titleFormat===opt.id?`0 0 0 2px ${palette.chipRing}`:"none" }}>
+                          <input type="radio" name="titleFormat" checked={titleFormat===opt.id} onChange={()=>setTitleFormat(opt.id)} style={{ marginRight:8 }}/>
+                          <b>{opt.name}</b><br/><span style={styles.note}>{opt.tip}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* ⑥ 포함/제외어 */}
+                <div ref={ref6} style={styles.labelRow}><span>반드시 포함할 단어(쉼표)</span><Help text="예) 체크리스트, 실무"/></div>
+                <div style={styles.ctrlWrap}>
+                  <input value={mustInclude} onFocus={()=>setFlowActive(6)} onChange={(e)=>setMustInclude(e.target.value)} placeholder="예: 체크리스트, 실무" style={{...styles.input, ...styles.ring(flowActive===6)}}/>
+                </div>
+                <div style={styles.labelRow}><span>피해야 할 단어(쉼표)</span><Help text="예) 과장, 광고, 낚시"/></div>
+                <div style={styles.ctrlWrap}>
+                  <input value={avoidTerms} onFocus={()=>setFlowActive(6)} onChange={(e)=>setAvoidTerms(e.target.value)} placeholder="예: 과장, 광고, 낚시" style={{...styles.input, ...styles.ring(flowActive===6)}}/>
+                </div>
+
+                {/* ⑦ 참고내용 */}
+                <div ref={ref7} style={styles.labelRow}><span>참고할 내용 (선택)</span><Help text="제목에 반영할 문단/핵심 포인트 붙여넣기"/></div>
+                <div className="ctrl-span-3" style={styles.ctrlWrap}>
+                  <textarea value={referenceText} onFocus={()=>setFlowActive(7)} onChange={(e)=>setReferenceText(e.target.value)} placeholder="제목에 반영하고 싶은 문단/핵심 포인트를 붙여넣으세요." style={{...styles.textarea, ...styles.ring(flowActive===7)}}/>
+                </div>
+
+                {/* ⑧ 개수 + 버튼 */}
+                <div ref={ref8} style={styles.labelRow}><span>제목 생성 개수</span><Help text="1~20개 중 선택. 기본 5개."/></div>
+                <div style={styles.ctrlWrap}>
+                  <input type="number" min={1} max={20} value={titleCount} onFocus={()=>setFlowActive(8)} onChange={(e)=>{ const v=parseInt(e.target.value||"0",10); setTitleCount(Number.isFinite(v)?v:5); }} style={{...styles.number, ...styles.ring(flowActive===8)}}/>
+                </div>
+                <div></div>
+                <div style={{...styles.ctrlWrap, display:"flex", justifyContent:"flex-end"}}>
+                  <button disabled={loading||!((keyword||"").trim().length>0)} onClick={onGenerateTitles} className="mb-full" style={{...styles.btn, opacity:(!((keyword||"").trim().length>0)||loading)?0.5:1}}>
+                    {loading?"생성 중...":(useAI&&apiKey?"AI로 제목 생성":"로컬 규칙으로 제목 생성")}
+                  </button>
+                </div>
+              </div>
+
+              {error && <div style={{ color: palette.danger, fontSize:12, marginTop:8 }}>오류: {error}</div>}
+
+              {titleIdeas.length>0&&(
+                <>
+                  <div style={{ marginTop:16, ...styles.note }}>생성된 제목을 선택하세요.</div>
+                  <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))", gap:12, marginTop:8 }}>
+                    {titleIdeas.map((t,i)=>(
+                      <label key={i} style={{ background:"#0e1117", border:`1px solid ${selectedTitle===t? palette.accentPress:palette.border}`, borderRadius:12, padding:12, cursor:"pointer", boxShadow:selectedTitle===t?`0 0 0 2px ${palette.chipRing}`:"none" }}>
+                        <input type="radio" name="pickTitle" checked={selectedTitle===t} onChange={()=>setSelectedTitle(t)} style={{ marginRight:8 }}/>
+                        <span>{t}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ marginTop:16, display:"flex", gap:8, justifyContent:"flex-end", flexWrap:"wrap" }}>
+                    <button onClick={()=>setActiveStep(1)} className="mb-full" style={styles.btnGhost}>이전(1단계)</button>
+                    <button disabled={!selectedTitle.trim()} onClick={()=>setActiveStep(3)} className="mb-full" style={{ ...styles.btn, opacity:selectedTitle.trim()?1:0.5 }}>다음(3단계: 본문)</button>
+                  </div>
+                </>
+              )}
+            </section>
+          )}
+
+          {/* STEP 3 */}
           {activeStep===3&&(
             <section style={{ ...styles.card, ...styles.container }}>
               <div style={styles.stepHead}>
@@ -541,7 +703,7 @@ JSON만 반환: {"titles":["..."]}` },
                 </div>
               )}
 
-              {/* 기존 미리보기/원문(편집) 영역 */}
+              {/* HTML 미리보기 + 마크다운 편집 */}
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginTop:16 }}>
                 <div>
                   <h3 style={styles.h3}>HTML 미리보기</h3>
@@ -552,10 +714,18 @@ JSON만 반환: {"titles":["..."]}` },
                   <textarea value={markdown} onChange={(e)=>setMarkdown(e.target.value)} rows={16} style={styles.textarea} />
                 </div>
               </div>
+
+              <div style={{ marginTop:16, display:"flex", gap:8, alignItems:"center", justifyContent:"space-between", flexWrap:"wrap" }}>
+                <div style={styles.note}>* PC에서는 4열 정렬(라벨 고정 너비)로, 태블릿/모바일에서는 2열/1열로 자연스럽게 접힙니다.</div>
+                <div style={{ display:'flex', gap:8, flexWrap:"wrap" }}>
+                  <button onClick={()=>setActiveStep(2)} className="mb-full" style={styles.btnGhost}>이전(2단계)</button>
+                  <button onClick={()=>window.scrollTo({top:0,behavior:'smooth'})} className="mb-full" style={styles.btnGhost}>맨 위로</button>
+                </div>
+              </div>
             </section>
           )}
 
-          {/* 전체 리더 모달 */}
+          {/* 본문 전체 보기 (모달) */}
           {readerOpen && (
             <div style={styles.overlay} onClick={()=>setReaderOpen(false)}>
               <div style={styles.reader} onClick={(e)=>e.stopPropagation()}>
@@ -568,10 +738,15 @@ JSON만 반환: {"titles":["..."]}` },
             </div>
           )}
 
-          {/* 하단 고정 바 (세이프 에어리어 적용) */}
+          {/* 하단 고정 바 */}
           <div style={styles.stickyMobile}>
             <button onClick={()=>setActiveStep(Math.max(1,activeStep-1))} style={styles.btnGhost}>이전</button>
             <div style={{ display:'flex', gap:8 }}>
+              {activeStep===2&&(
+                <button disabled={loading||!((keyword||"").trim().length>0)} onClick={onGenerateTitles} style={{...styles.btn, opacity:(!((keyword||"").trim().length>0)||loading)?0.5:1}}>
+                  {loading?'생성 중...':'제목 생성'}
+                </button>
+              )}
               {activeStep===3&&(
                 <>
                   <button disabled={!selectedTitle.trim()||genBusy} onClick={onGenerateBody} style={{ ...styles.btn, opacity:(!selectedTitle.trim()||genBusy)?0.5:1 }}>
